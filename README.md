@@ -34,7 +34,7 @@ That's it. The app plays music fine without an account — sign in only if you w
 Requires Node 20+, Git, and a Windows machine for `.exe` output.
 
 ```bash
-git clone https://github.com/kojiaudi/listal.git
+git clone https://github.com/04r/listal.git
 cd listal
 npm install        # also fetches yt-dlp.exe into resources/bin/
 npm run dev        # hot-reload dev mode
