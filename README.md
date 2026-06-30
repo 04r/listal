@@ -2,7 +2,7 @@
 
 One player for every service. Listal is a Windows desktop app that streams music from YouTube, SoundCloud, Bandcamp, and Spotify into one library — with synced lyrics, friends, DMs, and listen-along.
 
-![Listal](docs/listal2.png)
+![Listal](docs/listal.png)
 
 ## What it does
 
