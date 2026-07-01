@@ -113,7 +113,7 @@ export function Sidebar(): React.JSX.Element {
                 }
               }}
               placeholder="Name…"
-              className="h-5 w-full border border-[var(--color-border-strong)] bg-white px-1 text-[11px] outline-none focus:border-[var(--color-accent)]"
+              className="h-5 w-full border border-[var(--color-border-strong)] bg-[var(--color-input)] px-1 text-[11px] outline-none focus:border-[var(--color-accent)]"
             />
           </div>
         )}

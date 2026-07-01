@@ -115,7 +115,7 @@ export function UploaderView({ name }: Props): React.JSX.Element {
                 setSort(e.target.value as SortKey)
                 setPage(0)
               }}
-              className="h-5 border border-[var(--color-border-strong)] bg-white px-1 text-[11px]"
+              className="h-5 border border-[var(--color-border-strong)] bg-[var(--color-input)] px-1 text-[11px]"
             >
               <option value="default">Channel order</option>
               <option value="title">Title (A–Z)</option>

@@ -80,7 +80,7 @@ export function ConvoyDialog({ onClose }: Props): React.JSX.Element {
               Convoy is live. Share the code with anyone you want to bring in.
             </p>
             <div className="flex items-center gap-2">
-              <div className="flex-1 select-all border border-[var(--color-border-strong)] bg-white px-3 py-2 text-center font-mono text-[16px] font-semibold tracking-widest text-[var(--color-text)]">
+              <div className="flex-1 select-all border border-[var(--color-border-strong)] bg-[var(--color-input)] px-3 py-2 text-center font-mono text-[16px] font-semibold tracking-widest text-[var(--color-text)]">
                 {createdCode}
               </div>
               <button
@@ -124,7 +124,7 @@ export function ConvoyDialog({ onClose }: Props): React.JSX.Element {
                     onChange={(e) => setName(e.target.value)}
                     maxLength={40}
                     placeholder="Friday night queue"
-                    className="h-6 w-full border border-[var(--color-border-strong)] bg-white px-2 text-[12px] outline-none focus:border-[var(--color-accent)]"
+                    className="h-6 w-full border border-[var(--color-border-strong)] bg-[var(--color-input)] px-2 text-[12px] outline-none focus:border-[var(--color-accent)]"
                   />
                 </label>
                 {error && (
@@ -159,7 +159,7 @@ export function ConvoyDialog({ onClose }: Props): React.JSX.Element {
                     onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                     autoFocus
                     placeholder="CVY-ABC-123"
-                    className="h-8 w-full border border-[var(--color-border-strong)] bg-white px-2 text-center font-mono text-[14px] tracking-widest outline-none focus:border-[var(--color-accent)]"
+                    className="h-8 w-full border border-[var(--color-border-strong)] bg-[var(--color-input)] px-2 text-center font-mono text-[14px] tracking-widest outline-none focus:border-[var(--color-accent)]"
                   />
                 </label>
                 {error && (

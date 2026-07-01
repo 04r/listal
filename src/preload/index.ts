@@ -41,6 +41,12 @@ const api = {
   removeTrackFromPlaylist: (playlistId: number, trackId: number): Promise<void> =>
     ipcRenderer.invoke('library:removeTrackFromPlaylist', playlistId, trackId),
 
+  addExistingTrackToPlaylist: (
+    playlistId: number,
+    trackId: number
+  ): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('library:addExistingTrackToPlaylist', playlistId, trackId),
+
   deleteTrack: (trackId: number): Promise<void> =>
     ipcRenderer.invoke('library:deleteTrack', trackId),
 

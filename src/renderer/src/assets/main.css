@@ -20,6 +20,11 @@
   --color-row-current: #2f5db0;
   --color-row-current-fg: #ffffff;
   --color-link: #1c5fa9;
+  --color-input: #ffffff;       /* text inputs / code boxes / chat bubbles */
+  --color-chat-me: #2f5db0;     /* our chat bubble */
+  --color-chat-me-fg: #ffffff;
+  --color-chat-them: #ffffff;
+  --color-chat-them-fg: #000000;
 }
 
 /* Gradient palette used across every button, header, and title bar. Defined
@@ -58,6 +63,11 @@ html[data-theme='dark'] {
   --color-text-muted: #a8a8a8;
   --color-text-dim: #7c7c7c;
   --color-danger: #ff5c5c;
+  --color-input: #141414;
+  --color-chat-me: #3a67b8;
+  --color-chat-me-fg: #ffffff;
+  --color-chat-them: #262626;
+  --color-chat-them-fg: #eaeaea;
 }
 html[data-theme='dark'] body {
   background: var(--color-bg);

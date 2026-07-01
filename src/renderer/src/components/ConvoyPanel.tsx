@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { X, Radio, Copy, LogOut, Music, UserPlus, Check } from 'lucide-react'
+import { X, Radio, Copy, LogOut, Music, UserPlus, Check, SkipForward, ShieldCheck, Shield } from 'lucide-react'
 import { useConvoy } from '../stores/convoy'
 import { useFriends } from '../stores/friends'
 import { useAuth } from '../stores/auth'
+import { FloatingWindow } from './FloatingWindow'
 
 interface Props {
   onClose: () => void
@@ -12,17 +13,18 @@ export function ConvoyPanel({ onClose }: Props): React.JSX.Element {
   const session = useConvoy((s) => s.session)
   const participants = useConvoy((s) => s.participants)
   const queue = useConvoy((s) => s.queue)
+  const skipVotes = useConvoy((s) => s.skipVotes)
   const me = useAuth((s) => s.profile)
   const friendEntries = useFriends((s) => s.entries)
   const [copied, setCopied] = useState(false)
   const [inviteBusy, setInviteBusy] = useState<string | null>(null)
+  const [skipBusy, setSkipBusy] = useState(false)
 
   if (!session || !me) {
     return (
-      <aside className="flex w-[280px] shrink-0 flex-col border-l border-[var(--color-border-strong)] bg-[var(--color-shell)]">
-        <PanelHead onClose={onClose} />
+      <ConvoyFloat onClose={onClose}>
         <div className="p-3 text-[11px] text-[var(--color-text-muted)]">Not in a Convoy.</div>
-      </aside>
+      </ConvoyFloat>
     )
   }
 
@@ -55,16 +57,15 @@ export function ConvoyPanel({ onClose }: Props): React.JSX.Element {
   }
 
   return (
-    <aside className="flex w-[280px] shrink-0 flex-col border-l border-[var(--color-border-strong)] bg-[var(--color-shell)]">
-      <PanelHead onClose={onClose} />
-
+    <ConvoyFloat onClose={onClose}>
+      <div className="flex h-full flex-col overflow-y-auto">
       {/* Code + leave */}
       <div className="border-b border-[var(--color-border)] px-3 py-2">
         <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
           Code
         </div>
         <div className="flex items-center gap-1">
-          <div className="flex-1 select-all border border-[var(--color-border)] bg-white px-2 py-1 text-center font-mono text-[13px] font-semibold tracking-widest">
+          <div className="flex-1 select-all border border-[var(--color-border)] bg-[var(--color-input)] px-2 py-1 text-center font-mono text-[13px] font-semibold tracking-widest">
             {session.code}
           </div>
           <button
@@ -88,6 +89,51 @@ export function ConvoyPanel({ onClose }: Props): React.JSX.Element {
           </div>
         )}
       </div>
+
+      {/* Skip controls */}
+      {session.current_track_title && (() => {
+        const meRole = participants.find((p) => p.user_id === me.id)?.role
+        const isHost = session.host_id === me.id
+        const canInstantSkip = isHost || meRole === 'dj'
+        const total = participants.length
+        const threshold = total >= 3 ? total - 1 : Infinity
+        const votedCount = skipVotes.length
+        const alreadyVoted = skipVotes.includes(me.id)
+        return (
+          <div className="border-b border-[var(--color-border)] px-3 py-2">
+            <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+              Skip
+            </div>
+            {canInstantSkip ? (
+              <button
+                onClick={async () => {
+                  setSkipBusy(true)
+                  await useConvoy.getState().hostSkip()
+                  setSkipBusy(false)
+                }}
+                disabled={skipBusy}
+                className="flex w-full items-center justify-center gap-2 border border-[var(--color-border-strong)] bg-[var(--grad-primary)] px-2 py-1 text-[11.5px] font-semibold text-white hover:bg-[var(--grad-primary-hover)] disabled:opacity-40"
+              >
+                <SkipForward size={11} />
+                Skip now {isHost ? '(host)' : '(DJ)'}
+              </button>
+            ) : threshold === Infinity ? (
+              <div className="text-[10.5px] text-[var(--color-text-dim)]">
+                Not enough listeners for a vote-skip. Ask the host.
+              </div>
+            ) : (
+              <button
+                onClick={() => void useConvoy.getState().voteSkip()}
+                disabled={alreadyVoted}
+                className="flex w-full items-center justify-center gap-2 border border-[var(--color-border-strong)] bg-[var(--grad-btn)] px-2 py-1 text-[11.5px] hover:bg-[var(--grad-btn-hover)] disabled:opacity-60"
+              >
+                <SkipForward size={11} />
+                {alreadyVoted ? 'Voted' : 'Vote to skip'} · {votedCount}/{threshold}
+              </button>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Participants */}
       <Section title={`Listeners · ${participants.length}`}>
@@ -124,6 +170,22 @@ export function ConvoyPanel({ onClose }: Props): React.JSX.Element {
                   <span className="border border-[var(--color-border-strong)] bg-[var(--grad-btn)] px-1">
                     Host
                   </span>
+                )}
+                {p.role === 'dj' && !isHost && (
+                  <span className="border border-[var(--color-border-strong)] bg-[var(--grad-btn)] px-1 text-[var(--color-accent)]">
+                    DJ
+                  </span>
+                )}
+                {session.host_id === me.id && !isHost && (
+                  <button
+                    onClick={() =>
+                      void useConvoy.getState().setRole(p.user_id, p.role === 'dj' ? 'guest' : 'dj')
+                    }
+                    title={p.role === 'dj' ? 'Revoke instant-skip' : 'Grant instant-skip'}
+                    className="grid h-4 w-4 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] hover:bg-[var(--grad-btn-hover)]"
+                  >
+                    {p.role === 'dj' ? <ShieldCheck size={9} /> : <Shield size={9} />}
+                  </button>
                 )}
               </span>
             </div>
@@ -233,24 +295,36 @@ export function ConvoyPanel({ onClose }: Props): React.JSX.Element {
           )}
         </div>
       </Section>
-    </aside>
+      </div>
+    </ConvoyFloat>
   )
 }
 
-function PanelHead({ onClose }: { onClose: () => void }): React.JSX.Element {
+function ConvoyFloat({
+  onClose,
+  children
+}: {
+  onClose: () => void
+  children: React.ReactNode
+}): React.JSX.Element {
   return (
-    <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border-strong)] bg-[var(--grad-header)] px-2 text-[11px]">
-      <Radio size={11} />
-      <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-        Convoy
-      </span>
-      <button
-        onClick={onClose}
-        className="ml-auto text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-      >
-        <X size={12} />
-      </button>
-    </div>
+    <FloatingWindow
+      name="convoy"
+      defaultRect={{ x: 60, y: 100, w: 300, h: 520 }}
+      minW={240}
+      minH={220}
+      onClose={onClose}
+      title={
+        <>
+          <Radio size={11} />
+          <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+            Convoy
+          </span>
+        </>
+      }
+    >
+      {children}
+    </FloatingWindow>
   )
 }
 

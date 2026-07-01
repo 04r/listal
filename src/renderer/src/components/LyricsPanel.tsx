@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { Loader2, X, Mic2 } from 'lucide-react'
+import { Loader2, Mic2 } from 'lucide-react'
 import { usePlayer } from '../stores/player'
 import { useLyrics } from '../stores/lyrics'
+import { FloatingWindow } from './FloatingWindow'
 
 interface Props {
   onClose: () => void
@@ -54,28 +55,28 @@ export function LyricsPanel({ onClose }: Props): React.JSX.Element {
   }, [activeIndex])
 
   return (
-    <aside className="flex h-full w-[360px] shrink-0 flex-col border-l border-[var(--color-border-strong)] bg-[var(--color-shell)]">
-      <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 text-[11px]">
-        <Mic2 size={11} />
-        <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-          Lyrics
-        </span>
-        {lyrics?.source && (
-          <span className="text-[var(--color-text-dim)]">
-            via {SOURCE_LABEL[lyrics.source]}
-            {lyrics.synced ? ' · synced' : ' · plain'}
+    <FloatingWindow
+      name="lyrics"
+      defaultRect={{ x: Math.max(60, window.innerWidth - 420), y: 100, w: 360, h: 480 }}
+      minW={240}
+      minH={220}
+      onClose={onClose}
+      title={
+        <>
+          <Mic2 size={11} />
+          <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+            Lyrics
           </span>
-        )}
-        <button
-          onClick={onClose}
-          className="ml-auto text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-          aria-label="Close lyrics"
-        >
-          <X size={12} />
-        </button>
-      </div>
-
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 text-[14px] leading-snug">
+          {lyrics?.source && (
+            <span className="truncate text-[var(--color-text-dim)]">
+              via {SOURCE_LABEL[lyrics.source]}
+              {lyrics.synced ? ' · synced' : ' · plain'}
+            </span>
+          )}
+        </>
+      }
+    >
+      <div ref={scrollRef} className="flex h-full flex-col overflow-y-auto px-4 py-6 text-[14px] leading-snug">
         {!track && (
           <div className="text-[11px] text-[var(--color-text-muted)]">
             Pick a track to see lyrics.
@@ -145,7 +146,7 @@ export function LyricsPanel({ onClose }: Props): React.JSX.Element {
           <span>{lyrics?.trackName ?? track.title}</span>
         </div>
       )}
-    </aside>
+    </FloatingWindow>
   )
 }
 

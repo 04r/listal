@@ -59,6 +59,7 @@ async function fetchEntries(meId: string): Promise<FriendEntry[]> {
 // postgres_changes callbacks to an already-subscribed channel and blows up
 // with "cannot add postgres_changes callbacks after subscribe()".
 const startingFor = new Set<string>()
+let windowFocusHooked = false
 
 export const useFriends = create<FriendsState>((set, get) => ({
   meId: null,
@@ -88,8 +89,11 @@ export const useFriends = create<FriendsState>((set, get) => ({
     // Realtime: re-fetch on any friendship row change involving me. RLS already
     // filters the stream so we only see rows we're a party to, but the channel
     // filter isn't expressive enough for our OR — we just re-fetch on anything.
+    // We also listen for a broadcast on our per-user channel so that the
+    // accepter can nudge the requester directly, in case the postgres_changes
+    // stream doesn't reach the requester (RLS on the replication side).
     const ch = supabase
-      .channel(`friends:${meId}`)
+      .channel(`friends:${meId}`, { config: { broadcast: { self: false } } })
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'friendships' },
@@ -97,9 +101,26 @@ export const useFriends = create<FriendsState>((set, get) => ({
           void get().refresh()
         }
       )
+      .on('broadcast', { event: 'friend_changed' }, () => {
+        void get().refresh()
+      })
       .subscribe()
     set({ channel: ch })
     startingFor.delete(meId)
+
+    // Refresh whenever the window regains focus / visibility. Cheap safety net
+    // for any missed realtime event.
+    if (!windowFocusHooked) {
+      windowFocusHooked = true
+      const onFocus = (): void => {
+        const meIdNow = useFriends.getState().meId
+        if (meIdNow) void useFriends.getState().refresh()
+      }
+      window.addEventListener('focus', onFocus)
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') onFocus()
+      })
+    }
   },
 
   stop: async () => {
@@ -144,6 +165,14 @@ export const useFriends = create<FriendsState>((set, get) => ({
         requested_by: meId
       })
       if (insertErr) return { ok: false, error: insertErr.message }
+      try {
+        const nudge = supabase.channel(`friends:${profile.id}`)
+        await nudge.subscribe()
+        await nudge.send({ type: 'broadcast', event: 'friend_changed', payload: {} })
+        await nudge.unsubscribe()
+      } catch {
+        /* best-effort */
+      }
       await get().refresh()
       return { ok: true }
     } catch (e) {
@@ -164,6 +193,16 @@ export const useFriends = create<FriendsState>((set, get) => ({
       .eq('user_a', pair.user_a)
       .eq('user_b', pair.user_b)
     if (error) set({ error: error.message })
+    // Nudge the other party so they don't have to restart to see the change.
+    // Uses a one-shot ephemeral channel; no persistence needed.
+    try {
+      const nudge = supabase.channel(`friends:${other.id}`)
+      await nudge.subscribe()
+      await nudge.send({ type: 'broadcast', event: 'friend_changed', payload: {} })
+      await nudge.unsubscribe()
+    } catch {
+      // Best-effort — realtime + focus-refresh still covers this.
+    }
     await get().refresh()
   },
 

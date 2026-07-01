@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Play, Trash2, ExternalLink, Radio, Send } from 'lucide-react'
-import type { Track } from '../../../preload'
+import { Play, Trash2, ExternalLink, Radio, Send, ListPlus, Check } from 'lucide-react'
+import type { Track, Playlist } from '../../../preload'
 import { usePlayer } from '../stores/player'
 import { useLibrary } from '../stores/library'
 import { ShareDialog } from './ShareDialog'
@@ -30,6 +30,9 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; track: Track } | null>(null)
   const [share, setShare] = useState<Attachment | null>(null)
+  const [playlists, setPlaylists] = useState<Playlist[]>([])
+  const [playlistSubmenu, setPlaylistSubmenu] = useState(false)
+  const [addedTo, setAddedTo] = useState<number | null>(null)
 
   function onRowEnter(url: string): void {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
@@ -42,6 +45,20 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
   function onContextMenu(e: React.MouseEvent, t: Track): void {
     e.preventDefault()
     setMenu({ x: e.clientX, y: e.clientY, track: t })
+    setPlaylistSubmenu(false)
+    setAddedTo(null)
+    void window.api.listPlaylists().then(setPlaylists)
+  }
+
+  async function addTrackToPlaylist(playlistId: number, t: Track): Promise<void> {
+    const res = await window.api.addExistingTrackToPlaylist(playlistId, t.id)
+    if (res.ok) {
+      setAddedTo(playlistId)
+      setTimeout(() => {
+        setMenu(null)
+        setPlaylistSubmenu(false)
+      }, 500)
+    }
   }
 
   function openSongRadio(seed: Track): void {
@@ -191,6 +208,40 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
             <Radio size={11} />
             Song Radio
           </button>
+          <div
+            onMouseEnter={() => setPlaylistSubmenu(true)}
+            onMouseLeave={() => setPlaylistSubmenu(false)}
+            className="relative"
+          >
+            <button
+              className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
+            >
+              <ListPlus size={11} />
+              Add to playlist
+              <span className="ml-auto text-[10px] opacity-60">▸</span>
+            </button>
+            {playlistSubmenu && (
+              <div
+                className="absolute left-full top-0 min-w-[200px] max-h-[280px] overflow-y-auto border border-[var(--color-border-strong)] bg-[var(--color-shell)] py-1 shadow-2xl"
+              >
+                {playlists.length === 0 && (
+                  <div className="px-3 py-1 text-[11px] text-[var(--color-text-dim)]">
+                    No playlists yet.
+                  </div>
+                )}
+                {playlists.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => void addTrackToPlaylist(p.id, menu.track)}
+                    className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
+                  >
+                    {addedTo === p.id ? <Check size={11} /> : <ListPlus size={11} />}
+                    <span className="truncate">{p.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             onClick={() => shareTrack(menu.track)}
             className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"

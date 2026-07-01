@@ -74,7 +74,7 @@ export function PlaylistView({ playlistId }: Props): React.JSX.Element {
                 setEditingName(false)
               }
             }}
-            className="h-5 border border-[var(--color-border-strong)] bg-white px-1 text-[12px] font-semibold text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+            className="h-5 border border-[var(--color-border-strong)] bg-[var(--color-input)] px-1 text-[12px] font-semibold text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
           />
         ) : (
           <button

@@ -151,7 +151,7 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="h-6 flex-1 border border-[var(--color-border-strong)] bg-white px-1.5 text-[12px] outline-none focus:border-[var(--color-accent)]"
+        className="h-6 flex-1 border border-[var(--color-border-strong)] bg-[var(--color-input)] px-1.5 text-[12px] outline-none focus:border-[var(--color-accent)]"
       />
     </label>
   )

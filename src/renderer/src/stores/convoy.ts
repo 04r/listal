@@ -55,6 +55,9 @@ interface ConvoyState {
   // While applying incoming session state to the local player, ignore any
   // resulting player events so we don't rebroadcast our own updates.
   suppressBroadcast: boolean
+  // Voter user-ids who have voted to skip the current track. Reset whenever
+  // the current track changes.
+  skipVotes: string[]
 
   setMeId: (id: string | null) => void
   createConvoy: (name?: string) => Promise<{ ok: true; code: string } | { ok: false; error: string }>
@@ -68,6 +71,10 @@ interface ConvoyState {
   broadcastPlayback: (state: { is_playing?: boolean; current_position_sec?: number }) => Promise<void>
   advanceQueue: () => Promise<ConvoyQueueItem | null>
   setSuppress: (v: boolean) => void
+  // Skip / role controls.
+  setRole: (userId: string, role: 'dj' | 'guest') => Promise<{ ok: true } | { ok: false; error: string }>
+  hostSkip: () => Promise<void>
+  voteSkip: () => Promise<void>
 }
 
 function genCode(): string {
@@ -118,6 +125,10 @@ export const useConvoy = create<ConvoyState>((set, get) => {
           void get().leave()
           return
         }
+        const prev = get().session
+        if (prev && prev.current_track_url !== next.current_track_url) {
+          resetVotes()
+        }
         set({ session: next })
       }
     )
@@ -141,8 +152,60 @@ export const useConvoy = create<ConvoyState>((set, get) => {
       },
       () => void loadQueue()
     )
+    // Skip-vote broadcasts. Payload: { user_id, track_url }. We only accept
+    // votes matching the currently-playing track so stale votes for the
+    // previous song don't leak across.
+    ch.on('broadcast', { event: 'skip_vote' }, (msg) => {
+      const p = msg.payload as { user_id?: string; track_url?: string } | undefined
+      if (!p?.user_id) return
+      const cur = get().session?.current_track_url
+      if (!cur || p.track_url !== cur) return
+      const votes = get().skipVotes
+      if (votes.includes(p.user_id)) return
+      const nextVotes = [...votes, p.user_id]
+      set({ skipVotes: nextVotes })
+      maybeExecuteVoteSkip(nextVotes)
+    })
     ch.subscribe()
     set({ channel: ch })
+  }
+
+  // Reset votes whenever we swap tracks so a stale count doesn't skip the new
+  // song. Runs from the session subscription below.
+  function resetVotes(): void {
+    set({ skipVotes: [] })
+  }
+
+  // Only the host (or a DJ if the host isn't currently connected) is
+  // responsible for actually removing the queue item and broadcasting the
+  // new track. This prevents the same vote crossing the threshold from
+  // triggering N deletes.
+  function maybeExecuteVoteSkip(votes: string[]): void {
+    const s = get().session
+    if (!s) return
+    const parts = get().participants
+    const total = parts.length
+    if (total < 3) return
+    const threshold = total - 1
+    if (votes.length < threshold) return
+    const meId = get().meId
+    if (!meId) return
+    const isHost = meId === s.host_id
+    const hostPresent = parts.some((p) => p.user_id === s.host_id)
+    const iAmDj = parts.find((p) => p.user_id === meId)?.role === 'dj'
+    // Only the host triggers when host is present; otherwise a DJ, otherwise
+    // the participant who has been in the room longest.
+    let shouldAct = false
+    if (isHost) shouldAct = true
+    else if (!hostPresent && iAmDj) shouldAct = true
+    else if (!hostPresent) {
+      const nonHostDjs = parts.filter((p) => p.role === 'dj')
+      if (nonHostDjs.length === 0) {
+        const sorted = [...parts].sort((a, b) => a.joined_at.localeCompare(b.joined_at))
+        shouldAct = sorted[0]?.user_id === meId
+      }
+    }
+    if (shouldAct) void get().hostSkip()
   }
 
   return {
@@ -154,6 +217,7 @@ export const useConvoy = create<ConvoyState>((set, get) => {
     loading: false,
     error: null,
     suppressBroadcast: false,
+    skipVotes: [],
 
     setMeId: (id) => set({ meId: id }),
 
@@ -337,7 +401,77 @@ export const useConvoy = create<ConvoyState>((set, get) => {
       return next
     },
 
-    setSuppress: (v) => set({ suppressBroadcast: v })
+    setSuppress: (v) => set({ suppressBroadcast: v }),
+
+    setRole: async (userId, role) => {
+      const { session, meId } = get()
+      if (!session || !meId) return { ok: false, error: 'Not in a Convoy' }
+      if (meId !== session.host_id) return { ok: false, error: 'Only the host can change roles' }
+      const { error } = await supabase
+        .from('convoy_participants')
+        .update({ role })
+        .eq('convoy_id', session.id)
+        .eq('user_id', userId)
+      if (error) return { ok: false, error: error.message }
+      return { ok: true }
+    },
+
+    hostSkip: async () => {
+      const { session, queue } = get()
+      if (!session) return
+      const next = queue[0]
+      if (next) {
+        await supabase.from('convoy_queue').delete().eq('id', next.id)
+        await supabase
+          .from('convoys')
+          .update({
+            current_track_url: next.source_url,
+            current_track_title: next.title,
+            current_track_artist: next.artist,
+            current_track_service: next.service,
+            current_track_thumbnail: next.thumbnail_url,
+            current_track_duration_sec: next.duration_sec,
+            current_position_sec: 0,
+            is_playing: true,
+            position_ts: new Date().toISOString()
+          })
+          .eq('id', session.id)
+      } else {
+        // Nothing next — just stop playback of the current track.
+        await supabase
+          .from('convoys')
+          .update({
+            current_track_url: null,
+            current_track_title: null,
+            current_track_artist: null,
+            current_track_service: null,
+            current_track_thumbnail: null,
+            current_track_duration_sec: null,
+            current_position_sec: 0,
+            is_playing: false,
+            position_ts: new Date().toISOString()
+          })
+          .eq('id', session.id)
+      }
+      set({ skipVotes: [] })
+    },
+
+    voteSkip: async () => {
+      const { session, channel, meId, skipVotes } = get()
+      if (!session || !meId || !channel) return
+      if (!session.current_track_url) return
+      if (skipVotes.includes(meId)) return
+      // Optimistically record locally, then broadcast so peers count us.
+      const nextVotes = [...skipVotes, meId]
+      set({ skipVotes: nextVotes })
+      await channel.send({
+        type: 'broadcast',
+        event: 'skip_vote',
+        payload: { user_id: meId, track_url: session.current_track_url }
+      })
+      // Locally check the threshold too, in case we're the acting client.
+      maybeExecuteVoteSkip(nextVotes)
+    }
   }
 })
 

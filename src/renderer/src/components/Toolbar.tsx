@@ -4,6 +4,7 @@ import { usePlayer } from '../stores/player'
 import { useLibrary } from '../stores/library'
 import { useAuth } from '../stores/auth'
 import { TransportZone } from './TransportZone'
+import { TabBar } from './TabBar'
 
 interface ToolbarProps {
   lyricsOpen: boolean
@@ -36,6 +37,7 @@ export function Toolbar(props: ToolbarProps): React.JSX.Element {
         queueOpen={props.queueOpen}
         onToggleQueue={props.onToggleQueue}
       />
+      <TabBar />
       <SearchRow />
     </div>
   )
@@ -355,7 +357,7 @@ function SearchRow(): React.JSX.Element {
           onFocus={() => view.kind !== 'search' && setView({ kind: 'search' })}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Artist or song or paste a link…"
-          className="h-5 w-full border border-[var(--color-border-strong)] bg-white pl-6 pr-6 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+          className="h-5 w-full border border-[var(--color-border-strong)] bg-[var(--color-input)] pl-6 pr-6 text-[11px] text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
         />
         {query && (
           <button

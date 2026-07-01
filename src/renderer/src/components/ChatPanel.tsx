@@ -89,7 +89,7 @@ export function ChatPanel(): React.JSX.Element | null {
                 className={`max-w-[220px] px-2 py-1 text-[12px] leading-snug ${
                   mine
                     ? 'self-end bg-[var(--color-row-current)] text-white'
-                    : 'self-start bg-white text-[var(--color-text)] border border-[var(--color-border)]'
+                    : 'self-start bg-[var(--color-input)] text-[var(--color-text)] border border-[var(--color-border)]'
                 }`}
               >
                 {m.body}
@@ -104,7 +104,7 @@ export function ChatPanel(): React.JSX.Element | null {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Message"
-          className="h-6 flex-1 border border-[var(--color-border-strong)] bg-white px-1.5 text-[12px] outline-none focus:border-[var(--color-accent)]"
+          className="h-6 flex-1 border border-[var(--color-border-strong)] bg-[var(--color-input)] px-1.5 text-[12px] outline-none focus:border-[var(--color-accent)]"
         />
         <button
           type="submit"

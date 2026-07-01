@@ -47,7 +47,7 @@ export function ClaimUsernameDialog(): React.JSX.Element {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="lowercase, 2-32 chars"
-              className="h-6 flex-1 border border-[var(--color-border-strong)] bg-white px-1.5 text-[12px] outline-none focus:border-[var(--color-accent)]"
+              className="h-6 flex-1 border border-[var(--color-border-strong)] bg-[var(--color-input)] px-1.5 text-[12px] outline-none focus:border-[var(--color-accent)]"
             />
           </label>
           <label className="flex items-center gap-2">
@@ -56,7 +56,7 @@ export function ClaimUsernameDialog(): React.JSX.Element {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="(optional)"
-              className="h-6 flex-1 border border-[var(--color-border-strong)] bg-white px-1.5 text-[12px] outline-none focus:border-[var(--color-accent)]"
+              className="h-6 flex-1 border border-[var(--color-border-strong)] bg-[var(--color-input)] px-1.5 text-[12px] outline-none focus:border-[var(--color-accent)]"
             />
           </label>
 

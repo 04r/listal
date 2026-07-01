@@ -173,6 +173,28 @@ export function registerLibraryIpc(): void {
     }
   )
 
+  ipcMain.handle(
+    'library:addExistingTrackToPlaylist',
+    (_e, playlistId: number, trackId: number): { ok: true } | { ok: false; error: string } => {
+      try {
+        const db = getDb()
+        const maxPos = (
+          db
+            .prepare(
+              'SELECT COALESCE(MAX(position), -1) AS m FROM playlist_tracks WHERE playlist_id = ?'
+            )
+            .get(playlistId) as { m: number }
+        ).m
+        db.prepare(
+          'INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)'
+        ).run(playlistId, trackId, maxPos + 1)
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, error: (e as Error).message }
+      }
+    }
+  )
+
   ipcMain.handle('library:deleteTrack', (_e, trackId: number): void => {
     getDb().prepare('DELETE FROM tracks WHERE id = ?').run(trackId)
   })
