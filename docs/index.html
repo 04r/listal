@@ -167,17 +167,24 @@
         background: var(--panel);
         border: 1px solid var(--border);
       }
-      .hero-left .brand-logo {
-        width: 64px;
-        height: 64px;
+      .hero-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+      .hero-head .brand-logo {
+        width: 44px;
+        height: 44px;
         object-fit: contain;
-        margin-bottom: 8px;
+        flex-shrink: 0;
       }
       .hero h1 {
-        margin: 0 0 6px;
-        font-size: 36px;
+        margin: 0;
+        font-size: 40px;
         font-weight: 700;
         letter-spacing: -0.02em;
+        line-height: 1;
       }
       .hero .tagline { margin: 0 0 14px; font-size: 15px; }
       .hero .lede {
@@ -197,9 +204,11 @@
       .hero-right {
         background: var(--panel);
         border: 1px solid var(--border);
-        overflow: hidden;
+        overflow: visible;
         display: flex;
         flex-direction: column;
+        position: relative;
+        z-index: 1;
       }
       .fake-titlebar {
         display: flex;
@@ -227,7 +236,7 @@
       /* magnifier lens + zoom-result */
       .zoom-wrap {
         position: relative;
-        overflow: hidden;
+        overflow: visible;
         cursor: crosshair;
         border-top: 1px solid var(--border);
       }
@@ -237,27 +246,28 @@
         pointer-events: none;
         opacity: 0;
         transition: opacity 0.08s;
+        z-index: 30;
       }
       .zoom-wrap.active .lens,
       .zoom-wrap.active .zoom-result { opacity: 1; }
       .lens {
-        width: 70px;
-        height: 70px;
+        width: 56px;
+        height: 56px;
         border: 1px solid var(--border-strong);
-        background: rgba(255, 255, 255, 0.18);
-        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+        background: rgba(255, 255, 255, 0.2);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
       }
       html[data-theme="dark"] .lens {
         background: rgba(255, 255, 255, 0.1);
-        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
       }
       .zoom-result {
-        width: 240px;
-        height: 240px;
+        width: 170px;
+        height: 170px;
         border: 1px solid var(--border-strong);
         background-repeat: no-repeat;
         background-color: var(--panel);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
       }
       .zoom-hint {
         position: absolute;
@@ -423,8 +433,10 @@
     <main class="wrap">
       <section class="hero">
         <div class="hero-left">
-          <img class="brand-logo" src="listal.png" alt="Listal logo" />
-          <h1>Listal</h1>
+          <div class="hero-head">
+            <img class="brand-logo" src="listal.png" alt="Listal logo" />
+            <h1>Listal</h1>
+          </div>
           <p class="tagline">Your music, all in one place.</p>
           <p class="lede">
             Windows music player that pulls YouTube, SoundCloud, and Bandcamp into one
@@ -529,13 +541,13 @@
         <div class="service">
           <div class="svc-logo">
             <svg viewBox="0 0 24 24" fill="currentColor">
-              <rect x="0" y="13" width="1.4" height="4" rx="0.5"/>
-              <rect x="2" y="11" width="1.4" height="6" rx="0.5"/>
-              <rect x="4" y="9" width="1.4" height="8" rx="0.5"/>
-              <rect x="6" y="7.5" width="1.4" height="9.5" rx="0.5"/>
-              <rect x="8" y="6.5" width="1.4" height="10.5" rx="0.5"/>
-              <rect x="10" y="7" width="1.4" height="10" rx="0.5"/>
-              <path d="M13 17V9.5c1.2-1.4 3-2.3 5-2.3 3.3 0 6 2.6 6 5.9s-2.7 5.9-6 5.9H13z"/>
+              <rect x="1"  y="13" width="1" height="4"  rx="0.5"/>
+              <rect x="3"  y="11" width="1" height="6"  rx="0.5"/>
+              <rect x="5"  y="9"  width="1" height="8"  rx="0.5"/>
+              <rect x="7"  y="7"  width="1" height="10" rx="0.5"/>
+              <rect x="9"  y="6"  width="1" height="11" rx="0.5"/>
+              <rect x="11" y="6.5" width="1" height="10.5" rx="0.5"/>
+              <path d="M13 8.4c1.3-1.6 3.4-2.5 5.5-2.2 2.8.4 4.9 2.9 4.9 5.7 0 3-2.4 5.4-5.4 5.4H13V8.4z"/>
             </svg>
           </div>
           <p class="svc-name">SoundCloud</p>
@@ -624,53 +636,54 @@
         });
       })();
 
-      // Magnifier lens + zoom-result
+      // Magnifier lens + zoom-result. Zoom box is allowed to escape the
+      // screenshot bounds so it floats over neighbouring content, like on
+      // e-commerce sites.
       (function () {
         var wrap = document.getElementById('zoomWrap');
         if (!wrap) return;
         var img = wrap.querySelector('img.shot');
         var lens = document.getElementById('lens');
         var result = document.getElementById('zoomResult');
-        var ZOOM = 2.8;
-        var LENS = 70;
-        var RESULT = 240;
-
-        function inside(x, y, w, h) {
-          return x >= 0 && y >= 0 && x <= w && y <= h;
-        }
+        var ZOOM = 2.4;
+        var LENS = 56;
+        var RESULT = 170;
 
         function onMove(e) {
           var rect = img.getBoundingClientRect();
           var x = e.clientX - rect.left;
           var y = e.clientY - rect.top;
-          if (!inside(x, y, rect.width, rect.height)) {
+          if (x < 0 || y < 0 || x > rect.width || y > rect.height) {
             wrap.classList.remove('active');
             return;
           }
           wrap.classList.add('active');
 
-          // lens: centered on cursor, clamped to image
+          // Lens stays clamped inside the image so its outline never crosses
+          // the frame.
           var lx = Math.max(0, Math.min(rect.width - LENS, x - LENS / 2));
           var ly = Math.max(0, Math.min(rect.height - LENS, y - LENS / 2));
           lens.style.left = lx + 'px';
           lens.style.top = ly + 'px';
 
-          // result box: offset from cursor, flip side if it would spill out
-          var rx = x + 24;
-          var ry = y + 24;
-          if (rx + RESULT > rect.width) rx = x - 24 - RESULT;
-          if (ry + RESULT > rect.height) ry = y - 24 - RESULT;
-          rx = Math.max(0, Math.min(rect.width - RESULT, rx));
-          ry = Math.max(0, Math.min(rect.height - RESULT, ry));
+          // Zoom result floats off the cursor and is free to spill outside
+          // the image on both axes. We only nudge it if it would leave the
+          // viewport entirely.
+          var rx = x + 20;
+          var ry = y - RESULT - 20;
+          var absLeft = rect.left + rx;
+          var absTop = rect.top + ry;
+          var vw = window.innerWidth, vh = window.innerHeight;
+          if (absLeft + RESULT > vw) rx = x - RESULT - 20;
+          if (rect.top + ry < 0) ry = y + 20;
+          if (rect.top + ry + RESULT > vh) ry = vh - rect.top - RESULT - 4;
           result.style.left = rx + 'px';
           result.style.top = ry + 'px';
 
-          // magnified background follows cursor position
           result.style.backgroundImage = "url('screenshot.png')";
           result.style.backgroundSize = (rect.width * ZOOM) + 'px ' + (rect.height * ZOOM) + 'px';
           var bx = -(x * ZOOM - RESULT / 2);
           var by = -(y * ZOOM - RESULT / 2);
-          // clamp background so we never scroll off the source image
           bx = Math.min(0, Math.max(RESULT - rect.width * ZOOM, bx));
           by = Math.min(0, Math.max(RESULT - rect.height * ZOOM, by));
           result.style.backgroundPosition = bx + 'px ' + by + 'px';
