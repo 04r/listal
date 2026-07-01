@@ -19,6 +19,7 @@ import { registerAuthIpc } from './ipc/auth'
 import { registerLyricsIpc } from './ipc/lyrics'
 import { registerDiscordIpc } from './ipc/discord'
 import { initDiscord } from './services/discord'
+import { registerUpdater } from './services/updater'
 
 // CDN URLs from yt-dlp need an originating Referer to be willing to stream.
 // We rewrite headers for known streaming hosts before they leave the renderer.
@@ -103,6 +104,7 @@ app.whenReady().then(() => {
   registerLyricsIpc()
   registerDiscordIpc()
   void initDiscord()
+  registerUpdater()
   ipcMain.on('open-external', (_e, url: string) => {
     if (typeof url === 'string' && /^https?:\/\//.test(url)) void shell.openExternal(url)
   })

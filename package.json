@@ -1,7 +1,7 @@
 {
   "name": "listal",
   "productName": "Listal",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Listal — one player for songs from every service",
   "main": "./out/main/index.js",
   "author": "example.com",
@@ -29,6 +29,7 @@
     "@types/discord-rpc": "^4.0.11",
     "better-sqlite3": "^12.11.1",
     "discord-rpc": "^4.0.1",
+    "electron-updater": "^6.8.9",
     "hls.js": "^1.6.16",
     "howler": "^2.2.4",
     "lucide-react": "^1.22.0",

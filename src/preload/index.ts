@@ -96,8 +96,27 @@ const api = {
     isPlaying: boolean
     sourceUrl?: string | null
   }): Promise<void> => ipcRenderer.invoke('discord:set', p),
-  clearDiscordPresence: (): Promise<void> => ipcRenderer.invoke('discord:clear')
+  clearDiscordPresence: (): Promise<void> => ipcRenderer.invoke('discord:clear'),
+
+  // Updater
+  checkForUpdates: (): Promise<
+    { ok: true; version: string | null } | { ok: false; error: string }
+  > => ipcRenderer.invoke('updater:check'),
+  quitAndInstallUpdate: (): Promise<void> => ipcRenderer.invoke('updater:quitAndInstall'),
+  onUpdaterStatus: (cb: (status: UpdaterStatus) => void): (() => void) => {
+    const listener = (_e: unknown, payload: UpdaterStatus): void => cb(payload)
+    ipcRenderer.on('updater:status', listener)
+    return () => ipcRenderer.off('updater:status', listener)
+  }
 }
+
+export type UpdaterStatus =
+  | { kind: 'checking' }
+  | { kind: 'available'; version: string }
+  | { kind: 'up-to-date'; version: string }
+  | { kind: 'downloading'; percent: number; bps: number }
+  | { kind: 'downloaded'; version: string }
+  | { kind: 'error'; message: string }
 
 export type Api = typeof api
 export type {
