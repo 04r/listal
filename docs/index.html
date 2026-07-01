@@ -10,13 +10,9 @@
     />
     <link rel="icon" href="listal.png" />
     <meta property="og:title" content="Listal" />
-    <meta
-      property="og:description"
-      content="Your music, all in one place."
-    />
+    <meta property="og:description" content="Your music, all in one place." />
     <meta property="og:image" content="listal.png" />
     <script>
-      // Apply saved theme before paint so there's no flash.
       (function () {
         try {
           var t = localStorage.getItem('listal-theme') || 'light';
@@ -37,13 +33,13 @@
         --text-dim: #8a8a8a;
         --link: #0645ad;
         --row-current: #316ac5;
-        --logo-chip: #1a1a1a;
         --grad-btn: linear-gradient(#ffffff, #dcdcdc);
         --grad-btn-hover: linear-gradient(#ffffff, #cccccc);
         --grad-header: linear-gradient(#f0f0f0, #e6e6e6);
         --grad-titlebar: linear-gradient(#e6e6e6, #d6d6d6);
         --row-hover: #f7f7f7;
         --row-border: #e0e0e0;
+        --logo-filter: brightness(0);
         --font: "Segoe UI", Tahoma, "Trebuchet MS", sans-serif;
       }
       html[data-theme="dark"] {
@@ -58,13 +54,13 @@
         --text-dim: #7c7c7c;
         --link: #7ba8ff;
         --row-current: #4780ce;
-        --logo-chip: #101010;
         --grad-btn: linear-gradient(#3a3a3a, #2a2a2a);
         --grad-btn-hover: linear-gradient(#454545, #333333);
         --grad-header: linear-gradient(#2f2f2f, #262626);
         --grad-titlebar: linear-gradient(#2a2a2a, #1e1e1e);
         --row-hover: #2c2c2c;
         --row-border: #333333;
+        --logo-filter: none;
       }
       * { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; }
@@ -78,15 +74,8 @@
       a { color: var(--link); text-decoration: underline; }
       a:hover { text-decoration: none; }
 
-      /* logo chip: dark square behind the white logo so it's actually visible */
-      .logo-chip {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: var(--logo-chip);
-        border: 1px solid var(--border-strong);
-      }
-      .logo-chip img { display: block; }
+      /* logo: raw png, filter tints it to match theme */
+      .brand-logo { filter: var(--logo-filter); display: block; }
 
       /* title bar */
       .titlebar {
@@ -95,15 +84,14 @@
         z-index: 10;
         display: flex;
         align-items: center;
-        gap: 10px;
-        height: 32px;
-        padding: 0 10px;
+        gap: 8px;
+        height: 34px;
+        padding: 0 12px;
         background: var(--grad-titlebar);
         border-bottom: 1px solid var(--border);
-        font-size: 11.5px;
+        font-size: 12px;
       }
-      .titlebar .logo-chip { width: 20px; height: 20px; padding: 2px; }
-      .titlebar .logo-chip img { width: 100%; height: 100%; object-fit: contain; }
+      .titlebar .brand-logo { width: 20px; height: 20px; object-fit: contain; }
       .titlebar .name { font-weight: 600; letter-spacing: 0.2px; }
       .titlebar nav {
         margin-left: auto;
@@ -114,33 +102,37 @@
       .titlebar nav a {
         color: var(--text);
         text-decoration: none;
-        padding: 3px 8px;
+        padding: 4px 10px;
         border: 1px solid transparent;
       }
       .titlebar nav a:hover {
         border: 1px solid var(--border);
         background: var(--panel);
       }
-      .theme-toggle {
+
+      /* sun/moon theme toggle */
+      .icon-btn {
         margin-left: 6px;
-        padding: 3px 8px;
+        width: 26px;
+        height: 22px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         border: 1px solid var(--border-strong);
         background: var(--grad-btn);
         color: var(--text);
-        font-family: var(--font);
-        font-size: 11.5px;
         cursor: pointer;
+        padding: 0;
       }
-      .theme-toggle:hover { background: var(--grad-btn-hover); }
+      .icon-btn:hover { background: var(--grad-btn-hover); }
+      .icon-btn svg { width: 14px; height: 14px; display: block; }
+      /* show moon in light mode, sun in dark mode */
+      .icon-btn .i-sun { display: none; }
+      html[data-theme="dark"] .icon-btn .i-moon { display: none; }
+      html[data-theme="dark"] .icon-btn .i-sun { display: block; }
 
-      /* wrapper */
-      .wrap {
-        max-width: 1080px;
-        margin: 20px auto 40px;
-        padding: 0 14px;
-      }
+      .wrap { max-width: 1080px; margin: 22px auto 40px; padding: 0 14px; }
 
-      /* buttons */
       .btn {
         display: inline-flex;
         align-items: center;
@@ -171,32 +163,23 @@
         align-items: stretch;
       }
       .hero-left {
-        padding: 22px 22px 20px;
+        padding: 26px 26px 22px;
         background: var(--panel);
         border: 1px solid var(--border);
       }
-      .hero-head {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 10px;
+      .hero-left .brand-logo {
+        width: 64px;
+        height: 64px;
+        object-fit: contain;
+        margin-bottom: 8px;
       }
-      .hero-head .logo-chip {
-        width: 48px;
-        height: 48px;
-        padding: 6px;
-      }
-      .hero-head .logo-chip img { width: 100%; height: 100%; object-fit: contain; }
       .hero h1 {
-        margin: 0;
-        font-size: 34px;
+        margin: 0 0 6px;
+        font-size: 36px;
         font-weight: 700;
         letter-spacing: -0.02em;
       }
-      .hero .tagline {
-        margin: 0 0 14px;
-        font-size: 15px;
-      }
+      .hero .tagline { margin: 0 0 14px; font-size: 15px; }
       .hero .lede {
         margin: 0 0 18px;
         color: var(--text-muted);
@@ -210,7 +193,7 @@
         font-size: 11px;
       }
 
-      /* hero screenshot area */
+      /* hero right: fake app window with the screenshot */
       .hero-right {
         background: var(--panel);
         border: 1px solid var(--border);
@@ -227,8 +210,7 @@
         border-bottom: 1px solid var(--border);
         font-size: 11px;
       }
-      .fake-titlebar .logo-chip { width: 16px; height: 16px; padding: 2px; }
-      .fake-titlebar .logo-chip img { width: 100%; height: 100%; object-fit: contain; }
+      .fake-titlebar .brand-logo { width: 14px; height: 14px; object-fit: contain; }
       .fake-titlebar .win-btns {
         margin-left: auto;
         display: flex;
@@ -242,24 +224,40 @@
         display: inline-block;
       }
 
-      /* zoomable screenshot */
+      /* magnifier lens + zoom-result */
       .zoom-wrap {
         position: relative;
         overflow: hidden;
-        cursor: zoom-in;
+        cursor: crosshair;
         border-top: 1px solid var(--border);
       }
-      .zoom-wrap img.shot {
-        display: block;
-        width: 100%;
-        height: auto;
-        transform-origin: center center;
-        transition: transform 0.12s ease-out;
+      .zoom-wrap img.shot { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
+      .lens, .zoom-result {
+        position: absolute;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.08s;
       }
-      .zoom-wrap.zoomed { cursor: zoom-out; }
-      .zoom-wrap.zoomed img.shot {
-        transform: scale(2.2);
-        transition: transform-origin 0.05s linear, transform 0.15s ease-out;
+      .zoom-wrap.active .lens,
+      .zoom-wrap.active .zoom-result { opacity: 1; }
+      .lens {
+        width: 70px;
+        height: 70px;
+        border: 1px solid var(--border-strong);
+        background: rgba(255, 255, 255, 0.18);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+      }
+      html[data-theme="dark"] .lens {
+        background: rgba(255, 255, 255, 0.1);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+      }
+      .zoom-result {
+        width: 240px;
+        height: 240px;
+        border: 1px solid var(--border-strong);
+        background-repeat: no-repeat;
+        background-color: var(--panel);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
       }
       .zoom-hint {
         position: absolute;
@@ -272,8 +270,9 @@
         border: 1px solid var(--border-strong);
         opacity: 0.85;
         pointer-events: none;
+        transition: opacity 0.1s;
       }
-      .zoom-wrap.zoomed .zoom-hint { opacity: 0; }
+      .zoom-wrap.active .zoom-hint { opacity: 0; }
 
       /* section strip */
       .section-strip {
@@ -313,11 +312,7 @@
       }
       table.features tbody tr:last-child td { border-bottom: none; }
       table.features tbody tr:hover { background: var(--row-hover); }
-      table.features td.num {
-        width: 30px;
-        color: var(--text-dim);
-        font-variant-numeric: tabular-nums;
-      }
+      table.features td.num { width: 30px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
       table.features td.name { width: 180px; font-weight: 600; }
       table.features td.desc { color: var(--text-muted); }
 
@@ -328,37 +323,25 @@
         gap: 10px;
       }
       .service {
-        padding: 14px 12px;
+        padding: 16px 12px 14px;
         background: var(--panel);
         border: 1px solid var(--border);
         text-align: center;
       }
-      .service .badge {
-        display: inline-block;
-        padding: 2px 8px;
-        font-size: 10px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        border: 1px solid var(--border-strong);
-        background: var(--grad-btn);
+      .service .svc-logo {
+        width: 40px;
+        height: 40px;
+        margin: 0 auto 10px;
         color: var(--text);
-        margin-bottom: 8px;
       }
+      .service .svc-logo svg { width: 100%; height: 100%; display: block; }
       .service h4 { margin: 0 0 4px; font-size: 13px; }
+      .service .svc-name { margin: 0 0 6px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); }
       .service p { margin: 0; font-size: 11.5px; color: var(--text-muted); }
 
       /* how it works */
-      .how {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 10px;
-      }
-      .how .step {
-        padding: 12px 14px;
-        background: var(--panel);
-        border: 1px solid var(--border);
-      }
+      .how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+      .how .step { padding: 14px 16px; background: var(--panel); border: 1px solid var(--border); }
       .how .step .n {
         display: inline-block;
         min-width: 22px;
@@ -412,20 +395,27 @@
         .services { grid-template-columns: repeat(2, 1fr); }
         .how { grid-template-columns: 1fr; }
         .final { flex-direction: column; align-items: flex-start; }
+        .zoom-wrap { cursor: default; }
       }
     </style>
   </head>
   <body>
     <div class="titlebar">
-      <span class="logo-chip"><img src="listal.png" alt="" /></span>
+      <img class="brand-logo" src="listal.png" alt="" />
       <span class="name">Listal</span>
       <nav>
         <a href="#features">Features</a>
         <a href="#services">Services</a>
         <a href="#how">How it works</a>
         <a href="https://github.com/04r/listal">GitHub</a>
-        <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
-          <span id="themeLabel">Dark mode</span>
+        <button class="icon-btn" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">
+          <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+          <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+          </svg>
         </button>
       </nav>
     </div>
@@ -433,10 +423,8 @@
     <main class="wrap">
       <section class="hero">
         <div class="hero-left">
-          <div class="hero-head">
-            <span class="logo-chip"><img src="listal.png" alt="Listal logo" /></span>
-            <h1>Listal</h1>
-          </div>
+          <img class="brand-logo" src="listal.png" alt="Listal logo" />
+          <h1>Listal</h1>
           <p class="tagline">Your music, all in one place.</p>
           <p class="lede">
             Windows music player that pulls YouTube, SoundCloud, and Bandcamp into one
@@ -447,19 +435,19 @@
             <a class="btn primary" href="https://github.com/04r/listal/releases">Download</a>
             <a class="btn" href="https://github.com/04r/listal">View on GitHub</a>
           </div>
-          <div class="meta">
-            Windows · Free · Open source
-          </div>
+          <div class="meta">Windows · Free · Open source</div>
         </div>
 
         <div class="hero-right">
           <div class="fake-titlebar">
-            <span class="logo-chip"><img src="listal.png" alt="" /></span>
+            <img class="brand-logo" src="listal.png" alt="" />
             <span>Listal</span>
             <div class="win-btns"><span></span><span></span><span></span></div>
           </div>
           <div class="zoom-wrap" id="zoomWrap">
             <img class="shot" src="screenshot.png" alt="Listal library view" />
+            <div class="lens" id="lens"></div>
+            <div class="zoom-result" id="zoomResult"></div>
             <span class="zoom-hint">Hover to zoom</span>
           </div>
         </div>
@@ -529,22 +517,48 @@
       <div class="section-strip" id="services">Sources supported</div>
       <div class="services">
         <div class="service">
-          <span class="badge">YouTube</span>
+          <div class="svc-logo">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+            </svg>
+          </div>
+          <p class="svc-name">YouTube</p>
           <h4>Search and paste</h4>
           <p>Search the catalog or paste a video, playlist, or channel URL.</p>
         </div>
         <div class="service">
-          <span class="badge">SoundCloud</span>
+          <div class="svc-logo">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <rect x="0" y="13" width="1.4" height="4" rx="0.5"/>
+              <rect x="2" y="11" width="1.4" height="6" rx="0.5"/>
+              <rect x="4" y="9" width="1.4" height="8" rx="0.5"/>
+              <rect x="6" y="7.5" width="1.4" height="9.5" rx="0.5"/>
+              <rect x="8" y="6.5" width="1.4" height="10.5" rx="0.5"/>
+              <rect x="10" y="7" width="1.4" height="10" rx="0.5"/>
+              <path d="M13 17V9.5c1.2-1.4 3-2.3 5-2.3 3.3 0 6 2.6 6 5.9s-2.7 5.9-6 5.9H13z"/>
+            </svg>
+          </div>
+          <p class="svc-name">SoundCloud</p>
           <h4>Paste to import</h4>
           <p>Tracks and playlists from soundcloud.com go straight into your library.</p>
         </div>
         <div class="service">
-          <span class="badge">Bandcamp</span>
+          <div class="svc-logo">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M0 18.75l7.437-13.5H24l-7.438 13.5H0z"/>
+            </svg>
+          </div>
+          <p class="svc-name">Bandcamp</p>
           <h4>Paste to import</h4>
           <p>Album pages, single tracks, and artist discographies.</p>
         </div>
         <div class="service">
-          <span class="badge">Spotify</span>
+          <div class="svc-logo">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.9-.539-.12-.421.18-.78.54-.901 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.42 1.56-.301.421-1.021.599-1.56.3z"/>
+            </svg>
+          </div>
+          <p class="svc-name">Spotify</p>
           <h4>Metadata bridge</h4>
           <p>Paste a Spotify playlist. Listal finds a YouTube source for each track.</p>
         </div>
@@ -555,9 +569,7 @@
         <div class="step">
           <span class="n">01</span>
           <h4>Paste or search</h4>
-          <p>
-            Drop a URL or search across services. Listal handles the metadata.
-          </p>
+          <p>Drop a URL or search across services. Listal handles the metadata.</p>
         </div>
         <div class="step">
           <span class="n">02</span>
@@ -600,10 +612,8 @@
       // Theme toggle
       (function () {
         var btn = document.getElementById('themeToggle');
-        var label = document.getElementById('themeLabel');
         function apply(t) {
           document.documentElement.setAttribute('data-theme', t);
-          label.textContent = t === 'dark' ? 'Light mode' : 'Dark mode';
         }
         apply(localStorage.getItem('listal-theme') || 'light');
         btn.addEventListener('click', function () {
@@ -614,23 +624,61 @@
         });
       })();
 
-      // Mouse-tracking zoom on the hero screenshot
+      // Magnifier lens + zoom-result
       (function () {
         var wrap = document.getElementById('zoomWrap');
         if (!wrap) return;
         var img = wrap.querySelector('img.shot');
-        wrap.addEventListener('mouseenter', function () {
-          wrap.classList.add('zoomed');
-        });
+        var lens = document.getElementById('lens');
+        var result = document.getElementById('zoomResult');
+        var ZOOM = 2.8;
+        var LENS = 70;
+        var RESULT = 240;
+
+        function inside(x, y, w, h) {
+          return x >= 0 && y >= 0 && x <= w && y <= h;
+        }
+
+        function onMove(e) {
+          var rect = img.getBoundingClientRect();
+          var x = e.clientX - rect.left;
+          var y = e.clientY - rect.top;
+          if (!inside(x, y, rect.width, rect.height)) {
+            wrap.classList.remove('active');
+            return;
+          }
+          wrap.classList.add('active');
+
+          // lens: centered on cursor, clamped to image
+          var lx = Math.max(0, Math.min(rect.width - LENS, x - LENS / 2));
+          var ly = Math.max(0, Math.min(rect.height - LENS, y - LENS / 2));
+          lens.style.left = lx + 'px';
+          lens.style.top = ly + 'px';
+
+          // result box: offset from cursor, flip side if it would spill out
+          var rx = x + 24;
+          var ry = y + 24;
+          if (rx + RESULT > rect.width) rx = x - 24 - RESULT;
+          if (ry + RESULT > rect.height) ry = y - 24 - RESULT;
+          rx = Math.max(0, Math.min(rect.width - RESULT, rx));
+          ry = Math.max(0, Math.min(rect.height - RESULT, ry));
+          result.style.left = rx + 'px';
+          result.style.top = ry + 'px';
+
+          // magnified background follows cursor position
+          result.style.backgroundImage = "url('screenshot.png')";
+          result.style.backgroundSize = (rect.width * ZOOM) + 'px ' + (rect.height * ZOOM) + 'px';
+          var bx = -(x * ZOOM - RESULT / 2);
+          var by = -(y * ZOOM - RESULT / 2);
+          // clamp background so we never scroll off the source image
+          bx = Math.min(0, Math.max(RESULT - rect.width * ZOOM, bx));
+          by = Math.min(0, Math.max(RESULT - rect.height * ZOOM, by));
+          result.style.backgroundPosition = bx + 'px ' + by + 'px';
+        }
+
+        wrap.addEventListener('mousemove', onMove);
         wrap.addEventListener('mouseleave', function () {
-          wrap.classList.remove('zoomed');
-          img.style.transformOrigin = 'center center';
-        });
-        wrap.addEventListener('mousemove', function (e) {
-          var rect = wrap.getBoundingClientRect();
-          var x = ((e.clientX - rect.left) / rect.width) * 100;
-          var y = ((e.clientY - rect.top) / rect.height) * 100;
-          img.style.transformOrigin = x + '% ' + y + '%';
+          wrap.classList.remove('active');
         });
       })();
     </script>
