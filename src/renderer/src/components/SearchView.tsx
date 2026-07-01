@@ -1,29 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Loader2, Play, ListPlus, Link as LinkIcon, Search as SearchIcon } from 'lucide-react'
+import {
+  Loader2,
+  Play,
+  Plus,
+  Link as LinkIcon,
+  Radio,
+  ExternalLink,
+  User
+} from 'lucide-react'
 import type { SearchResult, Playlist, Track } from '../../../preload'
 import { useLibrary } from '../stores/library'
 import { usePlayer } from '../stores/player'
 import { ContentSurface } from './LibraryView'
 import { useSearchQuery } from './Toolbar'
-
-const SERVICE_LABELS: Record<string, { name: string; short: string; tone: string }> = {
-  youtube: { name: 'YouTube', short: 'YT', tone: 'bg-red-500/15 text-red-300' },
-  soundcloud: { name: 'SoundCloud', short: 'SC', tone: 'bg-orange-500/15 text-orange-300' },
-  bandcamp: { name: 'Bandcamp', short: 'BC', tone: 'bg-cyan-500/15 text-cyan-300' }
-}
-
-const SERVICE_PRIORITY: Record<string, number> = { youtube: 0, soundcloud: 1, bandcamp: 2 }
-
-interface Group {
-  key: string
-  titleKey: string
-  artistKey: string
-  title: string
-  uploader: string | null
-  durationSec: number | null
-  thumbnail: string | null
-  sources: SearchResult[]
-}
 
 export function SearchView(): React.JSX.Element {
   const [query] = useSearchQuery('')
@@ -32,8 +21,11 @@ export function SearchView(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [busyKey, setBusyKey] = useState<string | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; result: SearchResult } | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const playQueue = usePlayer((s) => s.playQueue)
+  const currentUrl = usePlayer((s) => (s.index >= 0 ? s.queue[s.index]?.sourceUrl : null))
+  const setView = useLibrary((s) => s.setView)
   const bump = useLibrary((s) => s.bump)
 
   useEffect(() => {
@@ -41,9 +33,8 @@ export function SearchView(): React.JSX.Element {
   }, [])
 
   const isUrl = useMemo(() => /^https?:\/\//i.test(query.trim()), [query])
-  const groups = useMemo(() => groupResults(results), [results])
 
-  // React to top-bar query changes
+  // React to top-bar query changes with a small debounce.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     const trimmed = query.trim()
@@ -65,458 +56,437 @@ export function SearchView(): React.JSX.Element {
     }, 450)
   }, [query])
 
-  async function addAndDo(
-    source: SearchResult,
-    playlistId: number | null,
-    andPlay: boolean,
-    busyKeyForRow: string
-  ): Promise<void> {
-    setBusyKey(busyKeyForRow)
-    const res = await window.api.addTrackFromUrl(source.sourceUrl, playlistId)
+  useEffect(() => {
+    if (!menu) return
+    const close = (): void => setMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [menu])
+
+  async function addAndPlay(r: SearchResult): Promise<void> {
+    setBusyKey(r.sourceUrl)
+    setError(null)
+    const res = await window.api.addTrackFromUrl(r.sourceUrl, null)
     setBusyKey(null)
     if (!res.ok) {
       setError(res.error)
       return
     }
     bump()
-    if (andPlay) await playQueue([res.track as Track], 0)
+    await playQueue([res.track as Track], 0)
   }
 
-  async function addUrl(playlistId: number | null, andPlay: boolean): Promise<void> {
-    setBusyKey('url')
+  async function addOnly(r: SearchResult, playlistId: number | null): Promise<void> {
+    setBusyKey(r.sourceUrl)
     setError(null)
-    const res = await window.api.addTrackFromUrl(query.trim(), playlistId)
+    const res = await window.api.addTrackFromUrl(r.sourceUrl, playlistId)
     setBusyKey(null)
     if (!res.ok) {
       setError(res.error)
       return
     }
     bump()
-    if (andPlay) await playQueue([res.track as Track], 0)
+  }
+
+  async function playUrl(): Promise<void> {
+    setBusyKey('url')
+    setError(null)
+    const res = await window.api.addTrackFromUrl(query.trim(), null)
+    setBusyKey(null)
+    if (!res.ok) {
+      setError(res.error)
+      return
+    }
+    bump()
+    await playQueue([res.track as Track], 0)
+  }
+
+  function openRadio(r: SearchResult): void {
+    setMenu(null)
+    setView({ kind: 'radio', seedUrl: r.sourceUrl, seedTitle: r.title })
   }
 
   return (
     <ContentSurface>
-      <div className="px-6 pt-6">
-        {!query.trim() && !loading && (
-          <EmptyHero icon={<SearchIcon size={36} />} title="Search across YouTube, SoundCloud, Bandcamp" subtitle="Use the search bar at the top, or paste any supported link to add it directly." />
-        )}
-
-        {loading && results.length === 0 && (
-          <div className="flex items-center gap-3 py-4 text-sm text-[var(--color-text-muted)]">
-            <Loader2 size={14} className="animate-spin" />
-            Searching…
-          </div>
-        )}
-
-        {error && (
-          <div className="mb-3 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
-            {error}
-          </div>
-        )}
-
-        {isUrl && (
-          <UrlCard
-            url={query.trim()}
-            busy={busyKey === 'url'}
-            playlists={playlists}
-            onAdd={(pid, play) => void addUrl(pid, play)}
-          />
-        )}
-
-        {!isUrl && !loading && results.length === 0 && query.trim() && (
-          <div className="py-16 text-center text-sm text-[var(--color-text-muted)]">
-            No results for <span className="text-[var(--color-text)]">&ldquo;{query}&rdquo;</span>
-          </div>
-        )}
+      <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-shell)] px-2 text-[11px]">
+        <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+          Search
+        </span>
+        <span className="text-[var(--color-text-dim)]">
+          {query.trim()
+            ? isUrl
+              ? 'looks like a link'
+              : loading
+                ? 'searching…'
+                : `${results.length} result${results.length === 1 ? '' : 's'}`
+            : 'type in the search box up top'}
+        </span>
+        {loading && <Loader2 size={11} className="animate-spin text-[var(--color-text-muted)]" />}
       </div>
 
-      {groups.length > 0 && (
-        <ul className="px-2">
-          {groups.map((g) => (
-            <GroupRow
-              key={g.key}
-              group={g}
-              playlists={playlists}
-              busy={busyKey === g.key}
-              onPlay={(src) => void addAndDo(src, null, true, g.key)}
-              onAddToPlaylist={(src, pid) => void addAndDo(src, pid, false, g.key)}
-            />
-          ))}
-        </ul>
+      {error && (
+        <div className="border-b border-[var(--color-border)] bg-red-500/10 px-3 py-1 text-[11px] text-[var(--color-danger)]">
+          {error}
+        </div>
+      )}
+
+      {isUrl && (
+        <div className="flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-shell)] px-3 py-2 text-[12px]">
+          <LinkIcon size={12} className="shrink-0 text-[var(--color-accent)]" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-medium">This looks like a link</div>
+            <div className="truncate text-[10.5px] text-[var(--color-text-muted)]">
+              {query.trim()}
+            </div>
+          </div>
+          <button
+            onClick={() => void playUrl()}
+            disabled={busyKey === 'url'}
+            className="flex items-center gap-1 border border-[var(--color-border-strong)] bg-[var(--grad-primary)] px-2 py-0.5 text-[11.5px] font-semibold text-white hover:bg-[var(--grad-primary-hover)] disabled:opacity-40"
+          >
+            {busyKey === 'url' ? (
+              <Loader2 size={10} className="animate-spin" />
+            ) : (
+              <Play size={10} fill="currentColor" />
+            )}
+            Play
+          </button>
+        </div>
+      )}
+
+      {!isUrl && query.trim() && !loading && (
+        <ArtistCard
+          query={query.trim()}
+          onOpen={(name) => setView({ kind: 'artist', name })}
+        />
+      )}
+
+      {!isUrl && results.length > 0 && (
+        <>
+          <div className="sticky top-0 z-10 grid grid-cols-[40px_50px_1fr_220px_100px_60px_28px] items-center gap-2 border-b border-[var(--color-border-strong)] bg-[var(--grad-header)] px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+            <span className="text-right">#</span>
+            <span></span>
+            <span>Title</span>
+            <span>Uploader</span>
+            <span>Service</span>
+            <span className="text-right">Time</span>
+            <span></span>
+          </div>
+
+          {results.map((r, i) => {
+            const isCurrent = r.sourceUrl === currentUrl
+            const busy = busyKey === r.sourceUrl
+            return (
+              <div
+                key={`${r.sourceUrl}-${i}`}
+                onDoubleClick={() => void addAndPlay(r)}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  setMenu({ x: e.clientX, y: e.clientY, result: r })
+                }}
+                className={`group grid h-10 grid-cols-[40px_50px_1fr_220px_100px_60px_28px] items-center gap-2 border-b border-[var(--color-border)]/40 px-2 text-[12px] ${
+                  isCurrent
+                    ? 'bg-[var(--color-row-current)] text-[var(--color-row-current-fg)]'
+                    : 'hover:bg-[var(--color-surface-3)]'
+                }`}
+              >
+                <div className="grid place-items-center">
+                  {busy ? (
+                    <Loader2 size={10} className="animate-spin text-[var(--color-text-muted)]" />
+                  ) : (
+                    <>
+                      <span
+                        className={`text-right tabular-nums group-hover:hidden ${
+                          isCurrent ? 'text-white' : 'text-[var(--color-text-muted)]'
+                        }`}
+                      >
+                        {i + 1}
+                      </span>
+                      <button
+                        onClick={() => void addAndPlay(r)}
+                        className={`hidden group-hover:block ${
+                          isCurrent ? 'text-white' : 'text-[var(--color-text)]'
+                        }`}
+                        aria-label={`Play ${r.title}`}
+                      >
+                        <Play size={10} fill="currentColor" />
+                      </button>
+                    </>
+                  )}
+                </div>
+                {r.thumbnail ? (
+                  <img
+                    src={r.thumbnail}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    className="h-8 w-8 border border-[var(--color-border)] object-cover"
+                    onError={(e) =>
+                      ((e.target as HTMLImageElement).style.visibility = 'hidden')
+                    }
+                  />
+                ) : (
+                  <div className="h-8 w-8 border border-[var(--color-border)] bg-[var(--color-surface-2)]" />
+                )}
+                <span className="truncate">{r.title}</span>
+                <span className="truncate">
+                  {r.uploader ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setView({ kind: 'uploader', name: r.uploader as string })
+                      }}
+                      className={`hover:underline ${
+                        isCurrent ? 'text-white' : 'text-[var(--color-link)]'
+                      }`}
+                      title={`Browse ${r.uploader}'s uploads`}
+                    >
+                      {r.uploader}
+                    </button>
+                  ) : (
+                    <span className={isCurrent ? 'text-white/80' : 'text-[var(--color-text-dim)]'}>
+                      —
+                    </span>
+                  )}
+                </span>
+                <span
+                  className={`truncate ${
+                    isCurrent ? 'text-white/80' : 'text-[var(--color-text-muted)]'
+                  }`}
+                >
+                  {r.service}
+                </span>
+                <span
+                  className={`text-right tabular-nums ${
+                    isCurrent ? 'text-white' : 'text-[var(--color-text-muted)]'
+                  }`}
+                >
+                  {fmt(r.durationSec)}
+                </span>
+                <div className="flex justify-end opacity-0 group-hover:opacity-100">
+                  <button
+                    onClick={() =>
+                      window.electron.ipcRenderer.send('open-external', r.sourceUrl)
+                    }
+                    title="Open source"
+                    className={
+                      isCurrent
+                        ? 'text-white'
+                        : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
+                    }
+                  >
+                    <ExternalLink size={11} />
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </>
+      )}
+
+      {!isUrl && !loading && results.length === 0 && query.trim() && (
+        <div className="px-3 py-6 text-[11px] text-[var(--color-text-muted)]">
+          No results for &ldquo;{query}&rdquo;.
+        </div>
+      )}
+      {!isUrl && !query.trim() && !loading && (
+        <div className="px-3 py-6 text-[11px] text-[var(--color-text-muted)]">
+          Type in the search bar up top to search YouTube, SoundCloud, and Bandcamp. Paste a URL
+          to add a track directly.
+        </div>
+      )}
+
+      {menu && (
+        <div
+          className="fixed z-50 min-w-[200px] border border-[var(--color-border-strong)] bg-[var(--color-shell)] py-1 text-[12px] shadow-2xl"
+          style={{ left: menu.x, top: menu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MenuItem
+            icon={<Play size={11} fill="currentColor" />}
+            label="Play now"
+            onClick={() => {
+              const r = menu.result
+              setMenu(null)
+              void addAndPlay(r)
+            }}
+          />
+          <MenuItem
+            icon={<Plus size={11} />}
+            label="Add to library"
+            onClick={() => {
+              const r = menu.result
+              setMenu(null)
+              void addOnly(r, null)
+            }}
+          />
+          {playlists.length > 0 && (
+            <div>
+              <div className="border-t border-[var(--color-border)] px-3 py-1 text-[9.5px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                Add to playlist
+              </div>
+              {playlists.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    const r = menu.result
+                    setMenu(null)
+                    void addOnly(r, p.id)
+                  }}
+                  className="block w-full truncate px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="my-1 border-t border-[var(--color-border)]" />
+          <MenuItem
+            icon={<Radio size={11} />}
+            label="Song Radio"
+            onClick={() => openRadio(menu.result)}
+          />
+          <MenuItem
+            icon={<ExternalLink size={11} />}
+            label="Open source"
+            onClick={() => {
+              window.electron.ipcRenderer.send('open-external', menu.result.sourceUrl)
+              setMenu(null)
+            }}
+          />
+        </div>
       )}
     </ContentSurface>
   )
 }
 
-function EmptyHero({
-  icon,
-  title,
-  subtitle
+// Debounced artist lookup. Fires Spotify + MusicBrainz in parallel; whichever
+// resolves with a plausible match becomes the card. Falls back to "Browse as
+// artist" so you can always jump into ArtistView from search.
+function ArtistCard({
+  query,
+  onOpen
 }: {
-  icon: React.ReactNode
-  title: string
-  subtitle: string
-}): React.JSX.Element {
-  return (
-    <div className="grid place-items-center gap-3 py-16 text-center text-[var(--color-text-muted)]">
-      <div className="grid h-16 w-16 place-items-center rounded-full bg-[var(--color-surface)]">
-        {icon}
-      </div>
-      <div className="text-xl font-semibold text-[var(--color-text)]">{title}</div>
-      <div className="max-w-md text-sm">{subtitle}</div>
-    </div>
-  )
-}
+  query: string
+  onOpen: (name: string) => void
+}): React.JSX.Element | null {
+  interface Info {
+    name: string
+    image: string | null
+    followers: number | null
+    source: 'spotify' | 'musicbrainz' | 'query'
+  }
+  const [info, setInfo] = useState<Info | null>(null)
+  const [loading, setLoading] = useState(false)
 
-function GroupRow({
-  group,
-  playlists,
-  busy,
-  onPlay,
-  onAddToPlaylist
-}: {
-  group: Group
-  playlists: Playlist[]
-  busy: boolean
-  onPlay: (source: SearchResult) => void
-  onAddToPlaylist: (source: SearchResult, playlistId: number) => void
-}): React.JSX.Element {
-  const [sourcesOpen, setSourcesOpen] = useState(false)
-  const [playlistsOpen, setPlaylistsOpen] = useState(false)
-  const [activeSource, setActiveSource] = useState<SearchResult>(group.sources[0])
-  const setView = useLibrary((s) => s.setView)
+  useEffect(() => {
+    let cancelled = false
+    setInfo(null)
+    setLoading(true)
+    const timer = setTimeout(async () => {
+      // Best-effort — either lookup can fail (no Spotify auth, MB offline).
+      const [sp, mb] = await Promise.allSettled([
+        window.api.getArtistFromSpotify(query),
+        window.api.getArtistCatalog(query)
+      ])
+      if (cancelled) return
+      const spok = sp.status === 'fulfilled' && sp.value.ok ? sp.value.data : null
+      const mbok = mb.status === 'fulfilled' && mb.value.ok ? mb.value.data : null
+      const spFound = spok && spok.found ? spok : null
+      const mbFound = mbok && mbok.mbid ? mbok : null
+      const name = spFound?.artistName ?? mbFound?.artistName ?? query
+      const image = spFound?.artistImage ?? null
+      const followers = spFound?.followers ?? null
+      if (spFound || mbFound) {
+        setInfo({
+          name,
+          image,
+          followers,
+          source: spFound ? 'spotify' : 'musicbrainz'
+        })
+      } else {
+        // No lookup succeeded — still show a card so the user can jump in.
+        setInfo({ name: query, image: null, followers: null, source: 'query' })
+      }
+      setLoading(false)
+    }, 300)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [query])
 
+  if (loading || !info) return null
   return (
-    <li className="group flex items-center gap-3 rounded-md px-4 py-2 transition-colors hover:bg-white/5">
-      {group.thumbnail ? (
+    <div className="flex items-center gap-3 border-b border-[var(--color-border)] bg-[var(--color-shell)] px-3 py-2 text-[12px]">
+      {info.image ? (
         <img
-          src={group.thumbnail}
+          src={info.image}
           alt=""
           referrerPolicy="no-referrer"
-          className="h-11 w-11 shrink-0 rounded object-cover"
-          onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')}
+          className="h-12 w-12 shrink-0 border border-[var(--color-border-strong)] object-cover"
         />
       ) : (
-        <div className="h-11 w-11 shrink-0 rounded bg-[var(--color-surface-2)]" />
-      )}
-
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{group.title}</div>
-        <div className="truncate text-xs text-[var(--color-text-muted)]">
-          <span className="mr-1">Song</span>·{' '}
-          {group.uploader ? (
-            <button
-              onClick={() => setView({ kind: 'artist', name: group.uploader as string })}
-              className="hover:text-[var(--color-text)] hover:underline"
-            >
-              {group.uploader}
-            </button>
-          ) : (
-            '—'
-          )}
+        <div className="grid h-12 w-12 shrink-0 place-items-center border border-[var(--color-border-strong)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]">
+          <User size={20} />
         </div>
-      </div>
-
-      {looksOfficial(activeSource, group.artistKey) && (
-        <span
-          className="shrink-0 rounded-sm bg-sky-500/20 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-sky-300"
-          title="Uploader name matches artist — likely official"
-        >
-          OFFICIAL
-        </span>
       )}
-
-      <span className="w-12 shrink-0 text-right text-xs text-[var(--color-text-muted)] tabular-nums">
-        {fmt(activeSource.durationSec)}
-      </span>
-
-      {/* Sources dropdown */}
-      <div className="relative shrink-0">
-        <button
-          onClick={() => setSourcesOpen((o) => !o)}
-          className="flex items-center gap-1.5 rounded-full border border-[var(--color-border-strong)] px-2.5 py-1 text-[10px] font-medium text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-text)] hover:text-[var(--color-text)]"
-          title="Switch source"
-        >
-          <span className={`rounded-sm px-1.5 py-0.5 text-[10px] ${SERVICE_LABELS[activeSource.service].tone}`}>
-            {SERVICE_LABELS[activeSource.service].short}
-          </span>
-          {group.sources.length > 1 && (
-            <span className="text-[10px] text-[var(--color-text-dim)]">+{group.sources.length - 1}</span>
-          )}
-          <span className="text-[var(--color-text-dim)]">▾</span>
-        </button>
-        {sourcesOpen && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => setSourcesOpen(false)} />
-            <div className="absolute right-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-shell)] shadow-xl">
-              {group.sources.map((s) => {
-                const lbl = SERVICE_LABELS[s.service]
-                const active = s.sourceUrl === activeSource.sourceUrl
-                return (
-                  <button
-                    key={s.sourceUrl}
-                    onClick={() => {
-                      setActiveSource(s)
-                      setSourcesOpen(false)
-                    }}
-                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors ${
-                      active ? 'bg-[var(--color-surface-2)]' : 'hover:bg-[var(--color-surface)]'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className={`rounded-sm px-1.5 py-0.5 text-[10px] ${lbl.tone}`}>
-                        {lbl.short}
-                      </span>
-                      <span className="text-[var(--color-text)]">{lbl.name}</span>
-                    </span>
-                    <span className="tabular-nums text-[var(--color-text-dim)]">
-                      {fmt(s.durationSec)}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-        <button
-          onClick={() => onPlay(activeSource)}
-          disabled={busy}
-          title={`Play (${SERVICE_LABELS[activeSource.service].name}) & save`}
-          className="grid h-8 w-8 place-items-center rounded-full bg-[var(--color-accent)] text-[var(--color-accent-fg)] disabled:opacity-50"
-        >
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} fill="currentColor" />}
-        </button>
-        <div className="relative">
-          <button
-            onClick={() => setPlaylistsOpen((o) => !o)}
-            title="Add to playlist"
-            className="grid h-8 w-8 place-items-center rounded-full text-[var(--color-text-muted)] hover:bg-white/10 hover:text-[var(--color-text)]"
-          >
-            <ListPlus size={14} />
-          </button>
-          {playlistsOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setPlaylistsOpen(false)} />
-              <div className="absolute right-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-shell)] shadow-xl">
-                {playlists.length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-[var(--color-text-dim)]">Make a playlist first.</div>
-                ) : (
-                  playlists.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => {
-                        onAddToPlaylist(activeSource, p.id)
-                        setPlaylistsOpen(false)
-                      }}
-                      className="block w-full truncate px-3 py-1.5 text-left text-sm hover:bg-[var(--color-surface)]"
-                    >
-                      {p.name}
-                    </button>
-                  ))
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </li>
-  )
-}
-
-function UrlCard({
-  url,
-  busy,
-  playlists,
-  onAdd
-}: {
-  url: string
-  busy: boolean
-  playlists: Playlist[]
-  onAdd: (playlistId: number | null, andPlay: boolean) => void
-}): React.JSX.Element {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="my-2 flex items-center gap-3 rounded-lg border border-[var(--color-accent)]/40 bg-[var(--color-accent)]/5 p-4">
-      <LinkIcon size={18} className="shrink-0 text-[var(--color-accent)]" />
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium">This looks like a link</div>
-        <div className="truncate text-xs text-[var(--color-text-muted)]">{url}</div>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+          Artist
+        </div>
+        <div className="truncate text-[14px] font-semibold text-[var(--color-text)]">
+          {info.name}
+        </div>
+        <div className="truncate text-[10.5px] text-[var(--color-text-dim)]">
+          {info.followers != null
+            ? `${fmtFollowers(info.followers)} listeners · ${labelFor(info.source)}`
+            : labelFor(info.source)}
+        </div>
       </div>
       <button
-        onClick={() => onAdd(null, true)}
-        disabled={busy}
-        className="flex items-center gap-2 rounded-full bg-[var(--color-accent)] px-4 py-2 text-sm font-semibold text-[var(--color-accent-fg)] disabled:opacity-50"
+        onClick={() => onOpen(info.name)}
+        className="flex items-center gap-1 border border-[var(--color-border-strong)] bg-[var(--grad-primary)] px-3 py-1 text-[11.5px] font-semibold text-white hover:bg-[var(--grad-primary-hover)]"
       >
-        {busy ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} fill="currentColor" />}
-        Play
+        Browse
       </button>
-      <div className="relative">
-        <button
-          onClick={() => setOpen((o) => !o)}
-          disabled={busy}
-          className="grid h-9 w-9 place-items-center rounded-full text-[var(--color-text-muted)] hover:bg-white/10 hover:text-[var(--color-text)] disabled:opacity-50"
-          title="Add to playlist"
-        >
-          <ListPlus size={16} />
-        </button>
-        {open && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-            <div className="absolute right-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-shell)] shadow-xl">
-              <button
-                onClick={() => {
-                  onAdd(null, false)
-                  setOpen(false)
-                }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]"
-              >
-                <Plus size={12} /> Library only
-              </button>
-              {playlists.length > 0 && (
-                <div className="border-t border-[var(--color-border)] py-1">
-                  {playlists.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => {
-                        onAdd(p.id, false)
-                        setOpen(false)
-                      }}
-                      className="block w-full truncate px-3 py-1.5 text-left text-sm hover:bg-[var(--color-surface)]"
-                    >
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
     </div>
   )
 }
 
-// ---- grouping ---------------------------------------------------------------
-
-const NOISE_RE =
-  /\b(official|audio|video|music|lyric[s]?|hd|4k|remaster(?:ed)?|original|hq|mv|live|explicit|free download|prod\.?(?:\s+by)?)\b/gi
-
-function normalize(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[\(\[].*?[\)\]]/g, ' ')
-    .replace(NOISE_RE, ' ')
-    .replace(/\s+(ft|feat)\.?\s+.*$/i, ' ')
-    .replace(/\.(mp3|m4a|wav|flac|ogg)$/i, ' ')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+function labelFor(source: 'spotify' | 'musicbrainz' | 'query'): string {
+  if (source === 'spotify') return 'Spotify'
+  if (source === 'musicbrainz') return 'MusicBrainz'
+  return 'search'
 }
 
-function parseTrack(
-  rawTitle: string,
-  uploader: string | null
-): { artist: string; title: string; artistFromTitle: boolean } {
-  const cleanedUploader = (uploader ?? '')
-    .replace(/\s*[-–—]\s*topic\s*$/i, '')
-    .replace(/[._]+/g, ' ')
-    .trim()
-  const m = rawTitle.match(/^([^-–—]+?)\s*[-–—]\s*(.+)$/)
-  if (m) {
-    const left = m[1].trim()
-    const right = m[2].trim()
-    if (left.length >= 2) return { artist: left, title: right, artistFromTitle: true }
-  }
-  // No "Artist - Title" pattern → fall back to uploader. Flag this so the
-  // "official" badge doesn't fire on the trivial uploader == artist tautology.
-  return { artist: cleanedUploader, title: rawTitle.trim(), artistFromTitle: false }
+function fmtFollowers(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
+  return String(n)
 }
 
-// Grouping pass — collapse the same canonical song across services, but only
-// when the durations agree to within ±DURATION_TOL_SEC. Without the duration
-// gate, "Sunset In Reverse" (3:31) and "Sunset In Reverse (slowed + reverb)"
-// (4:42) merge into one row even though they're musically different uploads.
-const DURATION_TOL_SEC = 4
-
-// Per-source flag set during grouping — whether the artist was parsed from
-// the title's "Artist - Title" pattern (vs. uploader fallback). Drives the
-// OFFICIAL badge so we don't fire it on the tautological self-match case.
-const artistFromTitleFlag = new Map<string, boolean>()
-
-function groupResults(items: SearchResult[]): Group[] {
-  artistFromTitleFlag.clear()
-  const groups: Group[] = []
-  for (const r of items) {
-    const { artist, title, artistFromTitle } = parseTrack(r.title, r.uploader)
-    artistFromTitleFlag.set(r.sourceUrl, artistFromTitle)
-    const titleKey = normalize(title)
-    const artistKey = normalize(artist)
-    if (!titleKey && !artistKey) continue
-
-    const existing = groups.find((g) => {
-      if (g.titleKey !== titleKey || g.artistKey !== artistKey) return false
-      // If both sides have a duration, require them to be close. If either
-      // side lacks one we fall back to title+artist-only matching.
-      if (g.durationSec != null && r.durationSec != null) {
-        return Math.abs(g.durationSec - r.durationSec) <= DURATION_TOL_SEC
-      }
-      return true
-    })
-
-    if (existing) {
-      if (!existing.sources.some((s) => s.sourceUrl === r.sourceUrl)) existing.sources.push(r)
-      if (!existing.thumbnail && r.thumbnail) existing.thumbnail = r.thumbnail
-      if (existing.durationSec == null && r.durationSec != null) existing.durationSec = r.durationSec
-    } else {
-      groups.push({
-        key: `${titleKey}|${artistKey}|${r.durationSec ?? '?'}`,
-        titleKey,
-        artistKey,
-        title,
-        uploader: artist || null,
-        durationSec: r.durationSec,
-        thumbnail: r.thumbnail,
-        sources: [r]
-      })
-    }
-  }
-  for (const g of groups) {
-    g.sources.sort((a, b) => {
-      // Promote results whose uploader name matches the parsed artist — those
-      // are almost certainly the artist's own upload (especially on SoundCloud
-      // where bootleggers rarely match the artist's handle).
-      const aOff = looksOfficial(a, g.artistKey) ? 0 : 1
-      const bOff = looksOfficial(b, g.artistKey) ? 0 : 1
-      if (aOff !== bOff) return aOff - bOff
-      return (SERVICE_PRIORITY[a.service] ?? 99) - (SERVICE_PRIORITY[b.service] ?? 99)
-    })
-  }
-  return groups
-}
-
-// Official-upload heuristic. Two ways a result counts as official:
-//   1. uploader name contains "vevo" or " - Topic" → label-managed channel
-//   2. the artist was parsed from the title's "Artist - Title" pattern AND
-//      the uploader handle contains that artist (case-insensitive)
-// Avoids the tautological case where parseTrack fell back to "artist = uploader"
-// because the title had no dash — that would mark every standalone upload as
-// official just because the uploader matches itself.
-function looksOfficial(r: SearchResult, artistKey: string): boolean {
-  const uploaderRaw = (r.uploader ?? '').toLowerCase()
-  if (/\bvevo\b/.test(uploaderRaw) || /\btopic\b/.test(uploaderRaw)) return true
-
-  if (!artistKey) return false
-  if (!artistFromTitleFlag.get(r.sourceUrl)) return false
-
-  const uploaderKey = normalize(r.uploader ?? '')
-  if (!uploaderKey) return false
-  const stripped = uploaderKey.replace(/\b(official|music|topic|vevo)\b/g, '').trim()
-  if (stripped.length < 2) return false
-  return stripped === artistKey || stripped.includes(artistKey)
+function MenuItem({
+  icon,
+  label,
+  onClick
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+}): React.JSX.Element {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
+    >
+      {icon}
+      {label}
+    </button>
+  )
 }
 
 function fmt(sec: number | null): string {

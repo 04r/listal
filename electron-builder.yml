@@ -11,6 +11,15 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
+
+# --- ADDED FOR YT-DLP BINARIES ---
+extraResources:
+  - from: resources/bin
+    to: bin
+    filter:
+      - "**/*"
+# ---------------------------------
+
 win:
   executableName: Listal
 nsis:

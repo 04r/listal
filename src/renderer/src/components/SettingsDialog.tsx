@@ -11,7 +11,8 @@ const PANELS: Array<{ key: PanelKey; label: string }> = [
   { key: 'convoy', label: 'Convoy' },
   { key: 'queue', label: 'Queue' },
   { key: 'lyrics', label: 'Lyrics' },
-  { key: 'chat', label: 'Chat' }
+  { key: 'chat', label: 'Chat' },
+  { key: 'rooms', label: 'Rooms' }
 ]
 
 const ACCENT_PRESETS = [

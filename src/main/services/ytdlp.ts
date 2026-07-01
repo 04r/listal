@@ -198,12 +198,14 @@ function doResolve(url: string): Promise<ResolvedStream> {
 
   return new Promise((resolveP, rejectP) => {
     const args = [
-      // Prefer progressive (Howler can play direct HTTPS audio). Fall back to
-      // HLS (m3u8) as a second choice for SoundCloud — most SC tracks only
-      // expose HLS, and the renderer plays those via hls.js. DASH is still
-      // excluded because we don't mux.
+      // Selector tiers, most preferred first:
+      //   1. Non-DRM progressive audio (best for Howler / plain <audio>).
+      //   2. Non-DRM HLS (most SoundCloud tracks — hls.js in the renderer).
+      //   3. Non-DRM anything, even DASH — better than failing.
+      //   4. Absolute last resort: bestaudio with no filter. yt-dlp sometimes
+      //      mis-flags perfectly playable formats; this saves them.
       '-f',
-      'bestaudio*[has_drm!=true][protocol!*=m3u8][protocol!*=dash]/bestaudio[has_drm!=true][protocol!*=dash]/bestaudio[has_drm!=true]',
+      'bestaudio*[has_drm!=true][protocol!*=m3u8][protocol!*=dash]/bestaudio[has_drm!=true][protocol!*=dash]/bestaudio[has_drm!=true]/bestaudio',
       '-S',
       'proto:https,abr,asr,acodec:opus,ext:webm:m4a',
       '--no-warnings',
@@ -250,13 +252,24 @@ function doResolve(url: string): Promise<ResolvedStream> {
       clearTimeout(killTimer)
       if (code !== 0) {
         console.error(`[ytdlp] exit ${code} stderr=${stderr.slice(0, 500)}`)
-        // SoundCloud Go / paid uploads return DRM-only formats. Surface that
-        // explicitly so the UI can show "this track is DRM-only" rather than
-        // a raw yt-dlp stderr dump.
-        if (/has_drm|DRM|Requested format is not available/i.test(stderr)) {
+        // Only flag as DRM when stderr actually names DRM/Widevine/encryption.
+        // "Requested format is not available" alone means our selector was too
+        // strict, not that the track is DRM-protected — the fallback tier
+        // usually catches those, but if even it fails we should say so
+        // clearly rather than blaming DRM.
+        if (/widevine|has_drm=True|drm.protected|encrypted stream/i.test(stderr)) {
           rejectP(
             new YtdlpError(
-              "This track only offers DRM-protected streams (SoundCloud Go / paid release). yt-dlp can't decrypt those — try a different upload of the same song.",
+              "This track is DRM-protected (SoundCloud Go+ / licensed release). yt-dlp can't decrypt those — try a different upload of the same song.",
+              stderr
+            )
+          )
+          return
+        }
+        if (/Requested format is not available/i.test(stderr)) {
+          rejectP(
+            new YtdlpError(
+              'No playable audio format found. The source may have changed formats — try `yt-dlp -U` or paste a different upload.',
               stderr
             )
           )

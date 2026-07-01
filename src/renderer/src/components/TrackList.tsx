@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Play, Trash2, ExternalLink, Radio } from 'lucide-react'
+import { Play, Trash2, ExternalLink, Radio, Send } from 'lucide-react'
 import type { Track } from '../../../preload'
 import { usePlayer } from '../stores/player'
 import { useLibrary } from '../stores/library'
+import { ShareDialog } from './ShareDialog'
+import type { Attachment } from '../lib/attachments'
 
 // Module-scope set so prefetches survive remounts and dedupe across views.
 const prefetched = new Set<string>()
@@ -27,6 +29,7 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
   const setView = useLibrary((s) => s.setView)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; track: Track } | null>(null)
+  const [share, setShare] = useState<Attachment | null>(null)
 
   function onRowEnter(url: string): void {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
@@ -44,6 +47,21 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
   function openSongRadio(seed: Track): void {
     setMenu(null)
     setView({ kind: 'radio', seedUrl: seed.sourceUrl, seedTitle: seed.title })
+  }
+
+  function shareTrack(t: Track): void {
+    setMenu(null)
+    setShare({
+      kind: 'song',
+      song: {
+        service: t.service,
+        sourceUrl: t.sourceUrl,
+        title: t.title,
+        artist: t.artist,
+        thumbnail: t.thumbnailUrl,
+        durationSec: t.durationMs ? t.durationMs / 1000 : null
+      }
+    })
   }
 
   useEffect(() => {
@@ -174,6 +192,13 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
             Song Radio
           </button>
           <button
+            onClick={() => shareTrack(menu.track)}
+            className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
+          >
+            <Send size={11} />
+            Share…
+          </button>
+          <button
             onClick={() => {
               window.electron.ipcRenderer.send('open-external', menu.track.sourceUrl)
               setMenu(null)
@@ -186,6 +211,7 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
         </div>
       )}
 
+      {share && <ShareDialog attachment={share} onClose={() => setShare(null)} />}
     </div>
   )
 }

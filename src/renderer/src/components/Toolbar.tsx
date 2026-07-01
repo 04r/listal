@@ -117,6 +117,10 @@ function Menubar({ onOpenAuth }: { onOpenAuth: () => void }): React.JSX.Element 
         shortcut: 'Ctrl+J',
         onClick: () => window.dispatchEvent(new CustomEvent('listal:toggle-convoy'))
       },
+      {
+        label: 'Rooms',
+        onClick: () => window.dispatchEvent(new CustomEvent('listal:toggle-rooms'))
+      },
       { type: 'separator' },
       {
         label: 'Settings…',

@@ -308,3 +308,129 @@ do $$ begin
   if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='convoy_queue')
   then execute 'alter publication supabase_realtime add table public.convoy_queue'; end if;
 end $$;
+
+-- ---------- rooms ----------
+-- Soulseek-style persistent chat rooms. Anyone signed in can see the list of
+-- public rooms and join one. Members see full history; non-members only see
+-- the room's existence + metadata.
+create table if not exists public.rooms (
+  id uuid primary key default gen_random_uuid(),
+  name text unique not null check (char_length(name) between 2 and 40),
+  description text,
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  is_public boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists rooms_public_idx on public.rooms (is_public, created_at desc);
+
+alter table public.rooms enable row level security;
+
+drop policy if exists "rooms_read_public" on public.rooms;
+create policy "rooms_read_public" on public.rooms
+  for select using (
+    is_public
+    or exists (
+      select 1 from public.room_members rm
+      where rm.room_id = id and rm.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "rooms_owner_insert" on public.rooms;
+create policy "rooms_owner_insert" on public.rooms
+  for insert with check (auth.uid() = owner_id);
+
+drop policy if exists "rooms_owner_update" on public.rooms;
+create policy "rooms_owner_update" on public.rooms
+  for update using (auth.uid() = owner_id);
+
+drop policy if exists "rooms_owner_delete" on public.rooms;
+create policy "rooms_owner_delete" on public.rooms
+  for delete using (auth.uid() = owner_id);
+
+-- ---------- room_members ----------
+create table if not exists public.room_members (
+  room_id uuid not null references public.rooms(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  role text not null default 'member' check (role in ('owner', 'mod', 'member')),
+  joined_at timestamptz not null default now(),
+  primary key (room_id, user_id)
+);
+
+create index if not exists room_members_user_idx on public.room_members (user_id);
+
+alter table public.room_members enable row level security;
+
+drop policy if exists "room_members_read" on public.room_members;
+create policy "room_members_read" on public.room_members
+  for select using (auth.role() = 'authenticated');
+
+drop policy if exists "room_members_self_insert" on public.room_members;
+create policy "room_members_self_insert" on public.room_members
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists "room_members_self_delete" on public.room_members;
+create policy "room_members_self_delete" on public.room_members
+  for delete using (auth.uid() = user_id);
+
+-- Room owner can kick anyone.
+drop policy if exists "room_members_owner_delete" on public.room_members;
+create policy "room_members_owner_delete" on public.room_members
+  for delete using (
+    exists (select 1 from public.rooms r where r.id = room_id and r.owner_id = auth.uid())
+  );
+
+-- ---------- room_messages ----------
+create table if not exists public.room_messages (
+  id bigserial primary key,
+  room_id uuid not null references public.rooms(id) on delete cascade,
+  from_user uuid not null references public.profiles(id) on delete cascade,
+  body text not null check (char_length(body) between 1 and 2000),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists room_messages_room_idx on public.room_messages (room_id, created_at desc);
+
+alter table public.room_messages enable row level security;
+
+-- Members can read a room's history.
+drop policy if exists "room_messages_member_read" on public.room_messages;
+create policy "room_messages_member_read" on public.room_messages
+  for select using (
+    exists (
+      select 1 from public.room_members rm
+      where rm.room_id = room_messages.room_id and rm.user_id = auth.uid()
+    )
+  );
+
+-- Members can post.
+drop policy if exists "room_messages_member_send" on public.room_messages;
+create policy "room_messages_member_send" on public.room_messages
+  for insert with check (
+    auth.uid() = from_user
+    and exists (
+      select 1 from public.room_members rm
+      where rm.room_id = room_messages.room_id and rm.user_id = auth.uid()
+    )
+  );
+
+-- Author can delete their own messages; room owner can delete any.
+drop policy if exists "room_messages_delete" on public.room_messages;
+create policy "room_messages_delete" on public.room_messages
+  for delete using (
+    auth.uid() = from_user
+    or exists (select 1 from public.rooms r where r.id = room_id and r.owner_id = auth.uid())
+  );
+
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='rooms')
+  then execute 'alter publication supabase_realtime add table public.rooms'; end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='room_members')
+  then execute 'alter publication supabase_realtime add table public.room_members'; end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='room_messages')
+  then execute 'alter publication supabase_realtime add table public.room_messages'; end if;
+end $$;

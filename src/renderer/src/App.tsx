@@ -16,6 +16,8 @@ import { FriendsPanel } from './components/FriendsPanel'
 import { ConvoyPanel } from './components/ConvoyPanel'
 import { ConvoyDialog } from './components/ConvoyDialog'
 import { QueuePanel } from './components/QueuePanel'
+import { RoomsPanel } from './components/RoomsPanel'
+import { RoomView } from './components/RoomView'
 import { SettingsDialog } from './components/SettingsDialog'
 import { TransportZone } from './components/TransportZone'
 import { ChatPanel } from './components/ChatPanel'
@@ -25,6 +27,7 @@ import { useAuth } from './stores/auth'
 import { useSocial } from './stores/social'
 import { useFriends } from './stores/friends'
 import { useConvoy } from './stores/convoy'
+import { useRooms } from './stores/rooms'
 import { startConvoyPlayerSync, stopConvoyPlayerSync } from './stores/convoyPlayerSync'
 import { usePlayer } from './stores/player'
 import { useLyrics } from './stores/lyrics'
@@ -37,6 +40,7 @@ function App(): React.JSX.Element {
   const [convoyOpen, setConvoyOpen] = useState(false)
   const [convoyDialogOpen, setConvoyDialogOpen] = useState(false)
   const [queueOpen, setQueueOpen] = useState(false)
+  const [roomsOpen, setRoomsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const theme = useSettings((s) => s.theme)
   const accent = useSettings((s) => s.accent)
@@ -76,12 +80,14 @@ function App(): React.JSX.Element {
       useSocial.getState().start(profile.id)
       void useFriends.getState().start(profile.id)
       useConvoy.getState().setMeId(profile.id)
+      void useRooms.getState().start(profile.id)
       startConvoyPlayerSync()
     } else {
       void useSocial.getState().stop()
       void useFriends.getState().stop()
       void useConvoy.getState().leave()
       useConvoy.getState().setMeId(null)
+      void useRooms.getState().stop()
       stopConvoyPlayerSync()
     }
   }, [profile?.id])
@@ -119,6 +125,20 @@ function App(): React.JSX.Element {
     if (!queueOpen) {
       setFriendsOpen(false)
       setConvoyOpen(false)
+      setRoomsOpen(false)
+    }
+  }
+
+  function toggleRooms(): void {
+    if (!profile) {
+      setAuthOpen(true)
+      return
+    }
+    setRoomsOpen((v) => !v)
+    if (!roomsOpen) {
+      setFriendsOpen(false)
+      setConvoyOpen(false)
+      setQueueOpen(false)
     }
   }
 
@@ -129,6 +149,7 @@ function App(): React.JSX.Element {
     const fr = (): void => toggleFriends()
     const cvy = (): void => toggleConvoy()
     const q = (): void => toggleQueue()
+    const rm = (): void => toggleRooms()
     const st = (): void => setSettingsOpen(true)
     const prof = (): void => {
       if (profile) setProfileOpen(true)
@@ -138,6 +159,7 @@ function App(): React.JSX.Element {
     window.addEventListener('listal:toggle-friends', fr)
     window.addEventListener('listal:toggle-convoy', cvy)
     window.addEventListener('listal:toggle-queue', q)
+    window.addEventListener('listal:toggle-rooms', rm)
     window.addEventListener('listal:open-settings', st)
     window.addEventListener('listal:open-profile', prof)
     return () => {
@@ -145,10 +167,11 @@ function App(): React.JSX.Element {
       window.removeEventListener('listal:toggle-friends', fr)
       window.removeEventListener('listal:toggle-convoy', cvy)
       window.removeEventListener('listal:toggle-queue', q)
+      window.removeEventListener('listal:toggle-rooms', rm)
       window.removeEventListener('listal:open-settings', st)
       window.removeEventListener('listal:open-profile', prof)
     }
-  }, [profile, convoySession, friendsOpen, convoyOpen, queueOpen])
+  }, [profile, convoySession, friendsOpen, convoyOpen, queueOpen, roomsOpen])
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-bg)]">
@@ -191,13 +214,15 @@ function App(): React.JSX.Element {
               convoyOpen,
               queueOpen,
               lyricsOpen,
+              roomsOpen,
               convoySession,
               profile,
               panelSides,
               onCloseFriends: () => setFriendsOpen(false),
               onCloseConvoy: () => setConvoyOpen(false),
               onCloseQueue: () => setQueueOpen(false),
-              onCloseLyrics: () => setLyricsOpen(false)
+              onCloseLyrics: () => setLyricsOpen(false),
+              onCloseRooms: () => setRoomsOpen(false)
             })}
             <Sidebar />
             <main className="min-w-0 flex-1 overflow-hidden bg-[var(--color-surface)]">
@@ -209,19 +234,22 @@ function App(): React.JSX.Element {
               {view.kind === 'radio' && (
                 <RadioView key={view.seedUrl} seedUrl={view.seedUrl} seedTitle={view.seedTitle} />
               )}
+              {view.kind === 'room' && <RoomView key={view.roomId} roomId={view.roomId} />}
             </main>
             {renderPanels('right', {
               friendsOpen,
               convoyOpen,
               queueOpen,
               lyricsOpen,
+              roomsOpen,
               convoySession,
               profile,
               panelSides,
               onCloseFriends: () => setFriendsOpen(false),
               onCloseConvoy: () => setConvoyOpen(false),
               onCloseQueue: () => setQueueOpen(false),
-              onCloseLyrics: () => setLyricsOpen(false)
+              onCloseLyrics: () => setLyricsOpen(false),
+              onCloseRooms: () => setRoomsOpen(false)
             })}
             <TransportZone
               zone="right"
@@ -309,6 +337,7 @@ interface PanelRenderArgs {
   convoyOpen: boolean
   queueOpen: boolean
   lyricsOpen: boolean
+  roomsOpen: boolean
   convoySession: unknown
   profile: unknown
   panelSides: Record<PanelKey, 'left' | 'right' | 'hidden'>
@@ -316,6 +345,7 @@ interface PanelRenderArgs {
   onCloseConvoy: () => void
   onCloseQueue: () => void
   onCloseLyrics: () => void
+  onCloseRooms: () => void
 }
 
 // Rendering a panel on the left needs the border on the right; on the right,
@@ -345,6 +375,9 @@ function renderPanels(side: 'left' | 'right', a: PanelRenderArgs): React.ReactNo
       )}
       {a.lyricsOpen && a.panelSides.lyrics === side && wrap(
         <LyricsPanel onClose={a.onCloseLyrics} />
+      )}
+      {a.roomsOpen && a.profile && a.panelSides.rooms === side && wrap(
+        <RoomsPanel onClose={a.onCloseRooms} />
       )}
     </>
   )

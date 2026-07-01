@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 export type Theme = 'light' | 'dark'
 export type PanelSide = 'left' | 'right' | 'hidden'
-export type PanelKey = 'friends' | 'convoy' | 'queue' | 'lyrics' | 'chat'
+export type PanelKey = 'friends' | 'convoy' | 'queue' | 'lyrics' | 'chat' | 'rooms'
 
 // Named blocks that can be dragged around the chrome.
 export type ToolbarSlot =
@@ -59,7 +59,8 @@ const DEFAULTS: Settings = {
     convoy: 'right',
     queue: 'right',
     lyrics: 'right',
-    chat: 'right'
+    chat: 'right',
+    rooms: 'right'
   },
   zoneContents: DEFAULT_ZONE_CONTENTS,
   customizeMode: false

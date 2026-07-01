@@ -178,14 +178,16 @@ function TreeGroup({
 }): React.JSX.Element {
   return (
     <div>
-      <button
-        onClick={onToggle}
-        className="flex w-full items-center gap-1 bg-[var(--grad-header)] px-1.5 py-0.5 text-left font-semibold uppercase text-[10.5px] tracking-wider text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-      >
-        {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-        <span className="flex-1">{label}</span>
+      <div className="flex w-full items-center gap-1 bg-[var(--grad-header)] px-1.5 py-0.5 font-semibold uppercase text-[10.5px] tracking-wider text-[var(--color-text-muted)]">
+        <button
+          onClick={onToggle}
+          className="flex flex-1 items-center gap-1 text-left hover:text-[var(--color-text)]"
+        >
+          {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+          <span className="flex-1">{label}</span>
+        </button>
         {action}
-      </button>
+      </div>
       {open && <div className="py-0.5">{children}</div>}
     </div>
   )

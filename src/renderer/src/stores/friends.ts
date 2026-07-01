@@ -54,6 +54,12 @@ async function fetchEntries(meId: string): Promise<FriendEntry[]> {
     .filter((x): x is FriendEntry => x != null)
 }
 
+// StrictMode double-fires effects in dev. Both fires call start(), and if we
+// only guard against a completed init the second call tries to add
+// postgres_changes callbacks to an already-subscribed channel and blows up
+// with "cannot add postgres_changes callbacks after subscribe()".
+const startingFor = new Set<string>()
+
 export const useFriends = create<FriendsState>((set, get) => ({
   meId: null,
   entries: [],
@@ -63,6 +69,8 @@ export const useFriends = create<FriendsState>((set, get) => ({
 
   start: async (meId) => {
     if (get().meId === meId && get().channel) return
+    if (startingFor.has(meId)) return
+    startingFor.add(meId)
     if (get().channel) await get().channel!.unsubscribe()
     set({ meId, loading: true, error: null, channel: null })
 
@@ -91,6 +99,7 @@ export const useFriends = create<FriendsState>((set, get) => ({
       )
       .subscribe()
     set({ channel: ch })
+    startingFor.delete(meId)
   },
 
   stop: async () => {

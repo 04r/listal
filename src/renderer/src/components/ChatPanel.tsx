@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { X, Send, Loader2 } from 'lucide-react'
 import { useAuth } from '../stores/auth'
 import { useChat } from '../stores/chat'
+import { decodeAttachment } from '../lib/attachments'
+import { SharedSongCard, SharedPlaylistCard } from './SharedCards'
 
 export function ChatPanel(): React.JSX.Element | null {
   const peer = useChat((s) => s.peer)
@@ -64,6 +66,23 @@ export function ChatPanel(): React.JSX.Element | null {
         <div className="flex flex-col gap-1.5">
           {messages.map((m) => {
             const mine = me && m.from_user === me.id
+            const attach = decodeAttachment(m.body)
+            if (attach) {
+              // Attachments render their own card; skip the bubble wrapper so
+              // the layout doesn't clip.
+              return (
+                <div
+                  key={m.id}
+                  className={mine ? 'self-end' : 'self-start'}
+                >
+                  {attach.kind === 'song' ? (
+                    <SharedSongCard song={attach.song} />
+                  ) : (
+                    <SharedPlaylistCard playlist={attach.playlist} />
+                  )}
+                </div>
+              )
+            }
             return (
               <div
                 key={m.id}
