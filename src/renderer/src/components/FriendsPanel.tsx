@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   X,
   Loader2,
@@ -7,10 +7,12 @@ import {
   X as XIcon,
   MessageSquare,
   Radio,
-  Music
+  Music,
+  RotateCw
 } from 'lucide-react'
 import { useAuth } from '../stores/auth'
-import { supabase, canonicalPair, type Profile, type FriendshipRow } from '../lib/supabase'
+import { useFriends } from '../stores/friends'
+import type { Profile } from '../lib/supabase'
 import { useSocial } from '../stores/social'
 import { useListenAlong } from '../stores/listenAlong'
 import { useChat } from '../stores/chat'
@@ -19,154 +21,44 @@ interface Props {
   onClose: () => void
 }
 
-interface FriendEntry {
-  profile: Profile
-  status: 'accepted' | 'pending_in' | 'pending_out'
-}
-
 export function FriendsPanel({ onClose }: Props): React.JSX.Element {
   const me = useAuth((s) => s.profile)
-  const [entries, setEntries] = useState<FriendEntry[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const entries = useFriends((s) => s.entries)
+  const loading = useFriends((s) => s.loading)
+  const error = useFriends((s) => s.error)
+  const sendRequest = useFriends((s) => s.sendRequest)
+  const decide = useFriends((s) => s.decide)
+  const unfriend = useFriends((s) => s.unfriend)
   const [addQuery, setAddQuery] = useState('')
   const [addBusy, setAddBusy] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
   const friendStates = useSocial((s) => s.friendStates)
   const followingId = useListenAlong((s) => s.hostId)
   const openChatWith = useChat((s) => s.openWith)
 
-  async function refresh(): Promise<void> {
-    if (!me) return
-    setLoading(true)
-    setError(null)
-    const { data: rows, error: fErr } = await supabase
-      .from('friendships')
-      .select('*')
-      .or(`user_a.eq.${me.id},user_b.eq.${me.id}`)
-    if (fErr) {
-      setError(fErr.message)
-      setLoading(false)
-      return
-    }
-    const others = (rows ?? []).map((r: FriendshipRow) => {
-      const otherId = r.user_a === me.id ? r.user_b : r.user_a
-      let status: FriendEntry['status']
-      if (r.status === 'accepted') status = 'accepted'
-      else if (r.requested_by === me.id) status = 'pending_out'
-      else status = 'pending_in'
-      return { otherId, status, raw: r }
-    })
-    const otherIds = others.map((o) => o.otherId)
-    if (otherIds.length === 0) {
-      setEntries([])
-      setLoading(false)
-      useSocial.getState().setFriendIds([])
-      return
-    }
-    const { data: profiles, error: pErr } = await supabase
-      .from('profiles')
-      .select('*')
-      .in('id', otherIds)
-    if (pErr) {
-      setError(pErr.message)
-      setLoading(false)
-      return
-    }
-    const byId = new Map<string, Profile>()
-    for (const p of profiles ?? []) byId.set(p.id, p)
-    const result = others
-      .map((o) => {
-        const p = byId.get(o.otherId)
-        return p ? { profile: p, status: o.status } : null
-      })
-      .filter((x): x is FriendEntry => x != null)
-    setEntries(result)
-    setLoading(false)
-    // Only subscribe to accepted friends' presence channels.
-    useSocial
-      .getState()
-      .setFriendIds(result.filter((e) => e.status === 'accepted').map((e) => e.profile.id))
-  }
-
-  useEffect(() => {
-    void refresh()
-  }, [me?.id])
-
-  async function sendRequest(): Promise<void> {
-    if (!me) return
-    const target = addQuery.trim().toLowerCase().replace(/^@/, '')
-    if (!target) return
+  async function onAdd(): Promise<void> {
+    if (!addQuery.trim()) return
     setAddBusy(true)
-    setError(null)
-    try {
-      const { data: profile, error: lookupErr } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('username', target)
-        .maybeSingle()
-      if (lookupErr) throw lookupErr
-      if (!profile) {
-        setError(`No user @${target} found.`)
-        return
-      }
-      if (profile.id === me.id) {
-        setError("You can't friend yourself.")
-        return
-      }
-      const pair = canonicalPair(me.id, profile.id)
-      const { error: insertErr } = await supabase.from('friendships').insert({
-        ...pair,
-        status: 'pending',
-        requested_by: me.id
-      })
-      if (insertErr) {
-        setError(insertErr.message)
-        return
-      }
-      setAddQuery('')
-      await refresh()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setAddBusy(false)
-    }
+    setLocalError(null)
+    const res = await sendRequest(addQuery)
+    setAddBusy(false)
+    if (!res.ok) setLocalError(res.error)
+    else setAddQuery('')
   }
 
-  async function decide(other: Profile, accept: boolean): Promise<void> {
-    if (!me) return
-    const pair = canonicalPair(me.id, other.id)
-    const { error: updErr } = await supabase
-      .from('friendships')
-      .update({
-        status: accept ? 'accepted' : 'declined',
-        decided_at: new Date().toISOString()
-      })
-      .eq('user_a', pair.user_a)
-      .eq('user_b', pair.user_b)
-    if (updErr) setError(updErr.message)
-    await refresh()
-  }
-
-  async function unfriend(other: Profile): Promise<void> {
-    if (!me) return
+  async function onUnfriend(other: Profile): Promise<void> {
     if (!confirm(`Remove @${other.username}?`)) return
-    const pair = canonicalPair(me.id, other.id)
-    const { error: delErr } = await supabase
-      .from('friendships')
-      .delete()
-      .eq('user_a', pair.user_a)
-      .eq('user_b', pair.user_b)
-    if (delErr) setError(delErr.message)
-    await refresh()
+    await unfriend(other)
   }
 
   const accepted = entries.filter((e) => e.status === 'accepted')
   const pendingIn = entries.filter((e) => e.status === 'pending_in')
   const pendingOut = entries.filter((e) => e.status === 'pending_out')
+  const shownError = localError ?? error
 
   return (
     <aside className="flex h-full w-[320px] shrink-0 flex-col border-l border-[var(--color-border-strong)] bg-[var(--color-shell)]">
-      <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border)] bg-[linear-gradient(#f0f0f0,#e6e6e6)] px-2 text-[11px]">
+      <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 text-[11px]">
         <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
           Friends
         </span>
@@ -191,23 +83,23 @@ export function FriendsPanel({ onClose }: Props): React.JSX.Element {
               value={addQuery}
               onChange={(e) => setAddQuery(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') void sendRequest()
+                if (e.key === 'Enter') void onAdd()
               }}
               placeholder="add by @username"
               className="h-5 flex-1 border border-[var(--color-border-strong)] bg-white px-1.5 text-[11px] outline-none focus:border-[var(--color-accent)]"
             />
             <button
-              onClick={() => void sendRequest()}
+              onClick={() => void onAdd()}
               disabled={addBusy || !addQuery.trim()}
-              className="grid h-5 place-items-center border border-[var(--color-border-strong)] bg-[linear-gradient(#ffffff,#dcdcdc)] px-2 text-[11px] hover:bg-[linear-gradient(#ffffff,#cccccc)] disabled:opacity-50"
+              className="grid h-5 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] px-2 text-[11px] hover:bg-[var(--grad-btn-hover)] disabled:opacity-50"
             >
               {addBusy ? <Loader2 size={10} className="animate-spin" /> : 'Add'}
             </button>
           </div>
 
-          {error && (
+          {shownError && (
             <div className="border-b border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] text-[var(--color-danger)]">
-              {error}
+              {shownError}
             </div>
           )}
           {loading && (
@@ -224,14 +116,14 @@ export function FriendsPanel({ onClose }: Props): React.JSX.Element {
                   <button
                     onClick={() => void decide(e.profile, true)}
                     title="Accept"
-                    className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[linear-gradient(#ffffff,#dcdcdc)] hover:bg-[linear-gradient(#ffffff,#cccccc)]"
+                    className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] hover:bg-[var(--grad-btn-hover)]"
                   >
                     <Check size={10} />
                   </button>
                   <button
                     onClick={() => void decide(e.profile, false)}
                     title="Decline"
-                    className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[linear-gradient(#ffffff,#dcdcdc)] hover:bg-[linear-gradient(#ffffff,#cccccc)]"
+                    className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] hover:bg-[var(--grad-btn-hover)]"
                   >
                     <XIcon size={10} />
                   </button>
@@ -246,9 +138,9 @@ export function FriendsPanel({ onClose }: Props): React.JSX.Element {
                 <Row key={e.profile.id} profile={e.profile}>
                   <span className="text-[10.5px] text-[var(--color-text-dim)]">pending</span>
                   <button
-                    onClick={() => void unfriend(e.profile)}
+                    onClick={() => void onUnfriend(e.profile)}
                     title="Cancel"
-                    className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[linear-gradient(#ffffff,#dcdcdc)] hover:bg-[linear-gradient(#ffffff,#cccccc)]"
+                    className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] hover:bg-[var(--grad-btn-hover)]"
                   >
                     <XIcon size={10} />
                   </button>
@@ -282,7 +174,8 @@ export function FriendsPanel({ onClose }: Props): React.JSX.Element {
                         if (following) useListenAlong.getState().stop()
                         else useListenAlong.getState().follow(e.profile.id)
                       }}
-                      onRemove={() => void unfriend(e.profile)}
+                      onResync={() => useListenAlong.getState().resync()}
+                      onRemove={() => void onUnfriend(e.profile)}
                     />
                   )
                 })
@@ -304,7 +197,7 @@ function Section({
 }): React.JSX.Element {
   return (
     <div>
-      <div className="border-b border-[var(--color-border)] bg-[linear-gradient(#f0f0f0,#e6e6e6)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+      <div className="border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
         {title}
       </div>
       {children}
@@ -341,6 +234,7 @@ function FriendRow({
   following,
   onChat,
   onListen,
+  onResync,
   onRemove
 }: {
   profile: Profile
@@ -351,27 +245,43 @@ function FriendRow({
   following: boolean
   onChat: () => void
   onListen: () => void
+  onResync: () => void
   onRemove: () => void
 }): React.JSX.Element {
   return (
     <div className="flex flex-col border-b border-[var(--color-border)]/40 px-2 py-1 hover:bg-[var(--color-surface-3)]">
       <div className="flex h-5 items-center gap-2">
-        <span
-          className="inline-block h-2 w-2 rounded-full"
-          style={{ background: online ? '#39b54a' : '#bdbdbd' }}
-          title={online ? 'online' : 'offline'}
-        />
+        {profile.avatar_url ? (
+          <img
+            src={profile.avatar_url}
+            alt=""
+            className="h-4 w-4 rounded-full border border-[var(--color-border)] object-cover"
+          />
+        ) : (
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{ background: online ? '#39b54a' : '#bdbdbd' }}
+            title={online ? 'online' : 'offline'}
+          />
+        )}
         <span className="truncate text-[12px] font-medium text-[var(--color-text)]">
           {profile.display_name ?? profile.username}
         </span>
         <span className="truncate text-[10px] text-[var(--color-text-dim)]">
           @{profile.username}
         </span>
+        {profile.avatar_url && (
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{ background: online ? '#39b54a' : '#bdbdbd' }}
+            title={online ? 'online' : 'offline'}
+          />
+        )}
         <div className="ml-auto flex items-center gap-1">
           <button
             onClick={onChat}
             title="Message"
-            className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[linear-gradient(#ffffff,#dcdcdc)] hover:bg-[linear-gradient(#ffffff,#cccccc)]"
+            className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] hover:bg-[var(--grad-btn-hover)]"
           >
             <MessageSquare size={10} />
           </button>
@@ -388,11 +298,20 @@ function FriendRow({
             className={`grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] ${
               following
                 ? 'bg-[var(--color-row-current)] text-white'
-                : 'bg-[linear-gradient(#ffffff,#dcdcdc)] hover:bg-[linear-gradient(#ffffff,#cccccc)]'
+                : 'bg-[var(--grad-btn)] hover:bg-[var(--grad-btn-hover)]'
             } disabled:opacity-40`}
           >
             <Radio size={10} />
           </button>
+          {following && (
+            <button
+              onClick={onResync}
+              title="Resync to host"
+              className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] hover:bg-[var(--grad-btn-hover)]"
+            >
+              <RotateCw size={10} />
+            </button>
+          )}
           <button
             onClick={onRemove}
             title="Remove"

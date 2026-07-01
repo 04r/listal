@@ -22,6 +22,9 @@ interface AuthState {
     username: string,
     displayName: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>
+  updateProfile: (
+    updates: { display_name?: string | null; avatar_url?: string | null; username?: string }
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
 }
@@ -66,37 +69,117 @@ async function loadProfile(userId: string): Promise<Profile | null> {
   }
 }
 
+// While signUp/claimUsername is mid-flight, the auth state change listener can
+// fire before our profile insert lands. Suppress its needsUsername toggle for
+// that window so the UI doesn't flash the claim-username dialog.
+let suppressNeedsUsername = false
+
+// Cache the last-known profile in localStorage so the very first paint after
+// launch shows the signed-in library, not a signed-out splash. We still fetch
+// a fresh profile in the background to catch anything that changed elsewhere.
+const PROFILE_CACHE_KEY = 'listal:cachedProfile'
+function readCachedProfile(): Profile | null {
+  try {
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as Profile
+  } catch {
+    return null
+  }
+}
+function writeCachedProfile(p: Profile | null): void {
+  try {
+    if (p) localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(p))
+    else localStorage.removeItem(PROFILE_CACHE_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
 export const useAuth = create<AuthState>((set, get) => {
   // Bootstrap: pick up any persisted session, then subscribe to changes.
+  //
+  // Two phases:
+  //   1. Instant — flip initializing=false with cached session + profile so
+  //      the app never renders a signed-out UI when the user is actually
+  //      signed in.
+  //   2. Refresh — pull the current profile in the background and reconcile.
   supabase.auth.getSession().then(async ({ data }) => {
     const session = data.session
     const user = session?.user ?? null
-    const profile = user ? await loadProfile(user.id) : null
+    const cached = user ? readCachedProfile() : null
     set({
       session,
       user,
-      profile,
-      needsUsername: !!user && !profile,
+      profile: cached,
       initializing: false
     })
-  })
-
-  supabase.auth.onAuthStateChange(async (_event, session) => {
-    const user = session?.user ?? null
-    const profile = user ? await loadProfile(user.id) : null
+    if (!user) return
+    const profile = await loadProfile(user.id)
+    writeCachedProfile(profile)
     set({
-      session,
-      user,
       profile,
-      needsUsername: !!user && !profile
+      needsUsername: !!user && !profile && !suppressNeedsUsername
     })
   })
 
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    // Only wipe profile on an explicit sign-out. Token refreshes, user
+    // updates, and re-sends of the initial session must NOT null out the
+    // profile — that was the source of the "logged out for a second" flash.
+    if (event === 'SIGNED_OUT') {
+      writeCachedProfile(null)
+      set({ session: null, user: null, profile: null, needsUsername: false })
+      return
+    }
+
+    const user = session?.user ?? null
+
+    // Silent refreshes just update the session; profile stays put.
+    if (event === 'TOKEN_REFRESHED') {
+      set({ session, user })
+      return
+    }
+
+    if (suppressNeedsUsername) {
+      set({ session, user })
+      return
+    }
+
+    if (!user) {
+      set({ session, user: null })
+      return
+    }
+
+    // SIGNED_IN, USER_UPDATED, INITIAL_SESSION — refresh the profile, but
+    // only overwrite our cached one if the fetch actually returns something.
+    // A failed / empty fetch keeps whatever we had (so a flaky network can't
+    // flip us to signed-out either).
+    const fresh = await loadProfile(user.id)
+    if (fresh) {
+      writeCachedProfile(fresh)
+      set({ session, user, profile: fresh, needsUsername: false })
+    } else {
+      const existing = get().profile
+      set({
+        session,
+        user,
+        needsUsername: !existing
+      })
+    }
+  })
+
+  // Seed initial state from localStorage so first paint already shows the
+  // signed-in library. The async bootstrap above will overwrite if reality
+  // differs (session expired, etc.).
+  const bootProfile = readCachedProfile()
   return {
     session: null,
     user: null,
-    profile: null,
-    initializing: true,
+    profile: bootProfile,
+    // Skip the "restoring session" splash if we have a cached profile —
+    // the user is very likely still signed in and we can render immediately.
+    initializing: !bootProfile,
     needsUsername: false,
 
     signIn: async (email, password) => {
@@ -121,6 +204,7 @@ export const useAuth = create<AuthState>((set, get) => {
     },
 
     signUp: async (email, password, username, displayName) => {
+      suppressNeedsUsername = true
       try {
         console.log('[auth] signUp start', { email, username })
         const cleanUsername = username.trim().toLowerCase()
@@ -149,8 +233,6 @@ export const useAuth = create<AuthState>((set, get) => {
         )
         if (error) {
           console.warn('[auth] signUp error', error)
-          // Supabase returns this when the email already exists. Surface it
-          // as a hint so the dialog can flip to Sign in.
           if (/already registered|user already exists/i.test(error.message)) {
             return {
               ok: false,
@@ -164,17 +246,31 @@ export const useAuth = create<AuthState>((set, get) => {
           return {
             ok: false,
             error:
-              'Account created — check your inbox to confirm, then sign in. (Username will be claimed on first sign-in.)'
+              'Account created — check your inbox to confirm, then sign in.'
+          }
+        }
+        // If Supabase has "Confirm email" ON, signUp returns a user but no
+        // session. Tell the user explicitly — otherwise they'll think they
+        // signed in successfully and be confused when the app restarts.
+        if (!data.session) {
+          return {
+            ok: false,
+            error:
+              'Account created — please confirm your email, then sign in. (Or turn off email confirmation in Supabase Auth settings.)'
           }
         }
 
         console.log('[auth] inserting profile')
-        const { error: profileError } = await withTimeout(
-          supabase.from('profiles').insert({
-            id: userId,
-            username: cleanUsername,
-            display_name: displayName.trim() || cleanUsername
-          }),
+        const { data: newProfile, error: profileError } = await withTimeout(
+          supabase
+            .from('profiles')
+            .insert({
+              id: userId,
+              username: cleanUsername,
+              display_name: displayName.trim() || cleanUsername
+            })
+            .select()
+            .single(),
           15_000,
           'profile insert'
         )
@@ -182,16 +278,29 @@ export const useAuth = create<AuthState>((set, get) => {
           console.warn('[auth] profile insert error', profileError)
           return { ok: false, error: profileError.message }
         }
+        // Set the profile directly — by the time onAuthStateChange fires for
+        // this signUp, the suppression flag will keep it from overwriting us.
+        const inserted = (newProfile as Profile) ?? null
+        writeCachedProfile(inserted)
+        set({
+          session: data.session,
+          user: data.user,
+          profile: inserted,
+          needsUsername: false
+        })
         console.log('[auth] signUp ok')
         return { ok: true }
       } catch (e) {
         const msg = (e as Error).message
         console.error('[auth] signUp threw', e)
         return { ok: false, error: msg }
+      } finally {
+        suppressNeedsUsername = false
       }
     },
 
     claimUsername: async (username, displayName) => {
+      suppressNeedsUsername = true
       try {
         const user = get().user
         if (!user) return { ok: false, error: 'Not signed in.' }
@@ -227,17 +336,62 @@ export const useAuth = create<AuthState>((set, get) => {
           return { ok: false, error: error.message }
         }
         const profile = await loadProfile(user.id)
+        writeCachedProfile(profile)
         set({ profile, needsUsername: !profile })
         return { ok: true }
       } catch (e) {
         const msg = (e as Error).message
         console.error('[auth] claimUsername threw', e)
         return { ok: false, error: msg }
+      } finally {
+        suppressNeedsUsername = false
+      }
+    },
+
+    updateProfile: async (updates) => {
+      try {
+        const user = get().user
+        if (!user) return { ok: false, error: 'Not signed in.' }
+        const patch: Record<string, unknown> = {}
+        if (updates.display_name !== undefined) patch.display_name = updates.display_name
+        if (updates.avatar_url !== undefined) patch.avatar_url = updates.avatar_url
+        if (updates.username !== undefined) {
+          const clean = updates.username.trim().toLowerCase()
+          if (!/^[a-z0-9_]{2,32}$/.test(clean)) {
+            return {
+              ok: false,
+              error: 'Username must be 2-32 chars: lowercase letters, digits, underscore.'
+            }
+          }
+          if (clean !== get().profile?.username) {
+            const lookup = await withTimeout(
+              supabase.from('profiles').select('id').eq('username', clean).maybeSingle(),
+              15_000,
+              'username check'
+            )
+            if (lookup.data) return { ok: false, error: 'Username already taken.' }
+          }
+          patch.username = clean
+        }
+        if (Object.keys(patch).length === 0) return { ok: true }
+        const { data, error } = await withTimeout(
+          supabase.from('profiles').update(patch).eq('id', user.id).select().single(),
+          15_000,
+          'profile update'
+        )
+        if (error) return { ok: false, error: error.message }
+        const next = (data as Profile) ?? null
+        writeCachedProfile(next)
+        set({ profile: next })
+        return { ok: true }
+      } catch (e) {
+        return { ok: false, error: (e as Error).message }
       }
     },
 
     signOut: async () => {
       await supabase.auth.signOut()
+      writeCachedProfile(null)
       set({ session: null, user: null, profile: null, needsUsername: false })
     },
 
@@ -245,6 +399,7 @@ export const useAuth = create<AuthState>((set, get) => {
       const user = get().user
       if (!user) return
       const profile = await loadProfile(user.id)
+      writeCachedProfile(profile)
       set({ profile, needsUsername: !profile })
     }
   }

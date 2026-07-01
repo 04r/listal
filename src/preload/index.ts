@@ -16,8 +16,8 @@ import type { SpotifyStatus } from '../main/ipc/auth'
 import type { LyricsResult } from '../main/ipc/lyrics'
 
 const api = {
-  resolveStream: (url: string): Promise<ResolveStreamResult> =>
-    ipcRenderer.invoke('playback:resolve', url),
+  resolveStream: (url: string, priority = false): Promise<ResolveStreamResult> =>
+    ipcRenderer.invoke('playback:resolve', url, priority),
 
   // Library
   listPlaylists: (): Promise<Playlist[]> => ipcRenderer.invoke('library:listPlaylists'),
@@ -46,6 +46,9 @@ const api = {
 
   search: (query: string): Promise<SearchResult[]> =>
     ipcRenderer.invoke('library:search', query),
+
+  songRadio: (sourceUrl: string): Promise<SearchResult[]> =>
+    ipcRenderer.invoke('library:songRadio', sourceUrl),
 
   getArtistTracks: (name: string): Promise<ArtistDiscography> =>
     ipcRenderer.invoke('library:getArtistTracks', name),
@@ -85,6 +88,7 @@ const api = {
     durationSec: number | null
     positionSec: number
     isPlaying: boolean
+    sourceUrl?: string | null
   }): Promise<void> => ipcRenderer.invoke('discord:set', p),
   clearDiscordPresence: (): Promise<void> => ipcRenderer.invoke('discord:clear')
 }

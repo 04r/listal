@@ -126,3 +126,185 @@ begin
     execute 'alter publication supabase_realtime add table public.messages';
   end if;
 end $$;
+
+-- Realtime: ship friendship inserts/updates/deletes so friend requests
+-- appear instantly without a refresh.
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'friendships'
+  ) then
+    execute 'alter publication supabase_realtime add table public.friendships';
+  end if;
+end $$;
+
+-- Realtime: profile updates (display name, avatar) — so friends see the
+-- change without restarting their app.
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'profiles'
+  ) then
+    execute 'alter publication supabase_realtime add table public.profiles';
+  end if;
+end $$;
+
+-- ---------- convoys ----------
+-- Shared listening sessions (Spotify Jam equivalent). The convoys row itself
+-- is the playback source of truth: any participant can update it, and every
+-- other participant mirrors it into their local player via realtime.
+create table if not exists public.convoys (
+  id uuid primary key default gen_random_uuid(),
+  host_id uuid not null references public.profiles(id) on delete cascade,
+  code text unique not null,
+  name text,
+  dj_mode text not null default 'open' check (dj_mode in ('open', 'host_only')),
+  current_track_url text,
+  current_track_title text,
+  current_track_artist text,
+  current_track_service text,
+  current_track_thumbnail text,
+  current_track_duration_sec numeric,
+  current_position_sec numeric not null default 0,
+  is_playing boolean not null default false,
+  position_ts timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  ended_at timestamptz
+);
+
+create index if not exists convoys_code_active_idx
+  on public.convoys (code) where ended_at is null;
+
+alter table public.convoys enable row level security;
+
+-- Any signed-in user can look up by code; join-by-code needs this.
+drop policy if exists "convoys_read" on public.convoys;
+create policy "convoys_read" on public.convoys
+  for select using (auth.role() = 'authenticated');
+
+drop policy if exists "convoys_host_insert" on public.convoys;
+create policy "convoys_host_insert" on public.convoys
+  for insert with check (auth.uid() = host_id);
+
+-- Any participant can push playback state. The check that we're a participant
+-- is enforced through the convoy_participants membership.
+drop policy if exists "convoys_participant_update" on public.convoys;
+create policy "convoys_participant_update" on public.convoys
+  for update using (
+    exists (
+      select 1 from public.convoy_participants cp
+      where cp.convoy_id = id and cp.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "convoys_host_delete" on public.convoys;
+create policy "convoys_host_delete" on public.convoys
+  for delete using (auth.uid() = host_id);
+
+-- ---------- convoy_participants ----------
+create table if not exists public.convoy_participants (
+  convoy_id uuid not null references public.convoys(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  role text not null default 'guest' check (role in ('host', 'dj', 'guest')),
+  joined_at timestamptz not null default now(),
+  primary key (convoy_id, user_id)
+);
+
+create index if not exists convoy_participants_user_idx
+  on public.convoy_participants (user_id);
+
+alter table public.convoy_participants enable row level security;
+
+-- Any signed-in user can read participant rows; they need it to render the
+-- roster when they join.
+drop policy if exists "convoy_participants_read" on public.convoy_participants;
+create policy "convoy_participants_read" on public.convoy_participants
+  for select using (auth.role() = 'authenticated');
+
+drop policy if exists "convoy_participants_self_insert" on public.convoy_participants;
+create policy "convoy_participants_self_insert" on public.convoy_participants
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists "convoy_participants_self_delete" on public.convoy_participants;
+create policy "convoy_participants_self_delete" on public.convoy_participants
+  for delete using (auth.uid() = user_id);
+
+-- Host can kick anyone.
+drop policy if exists "convoy_participants_host_delete" on public.convoy_participants;
+create policy "convoy_participants_host_delete" on public.convoy_participants
+  for delete using (
+    exists (
+      select 1 from public.convoys c
+      where c.id = convoy_id and c.host_id = auth.uid()
+    )
+  );
+
+-- ---------- convoy_queue ----------
+create table if not exists public.convoy_queue (
+  id bigserial primary key,
+  convoy_id uuid not null references public.convoys(id) on delete cascade,
+  position numeric not null,
+  service text not null,
+  source_url text not null,
+  title text not null,
+  artist text,
+  thumbnail_url text,
+  duration_sec numeric,
+  added_by uuid not null references public.profiles(id),
+  added_at timestamptz not null default now()
+);
+
+create index if not exists convoy_queue_position_idx
+  on public.convoy_queue (convoy_id, position);
+
+alter table public.convoy_queue enable row level security;
+
+drop policy if exists "convoy_queue_read" on public.convoy_queue;
+create policy "convoy_queue_read" on public.convoy_queue
+  for select using (
+    exists (
+      select 1 from public.convoy_participants cp
+      where cp.convoy_id = convoy_queue.convoy_id and cp.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "convoy_queue_insert" on public.convoy_queue;
+create policy "convoy_queue_insert" on public.convoy_queue
+  for insert with check (
+    auth.uid() = added_by
+    and exists (
+      select 1 from public.convoy_participants cp
+      where cp.convoy_id = convoy_queue.convoy_id and cp.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "convoy_queue_delete" on public.convoy_queue;
+create policy "convoy_queue_delete" on public.convoy_queue
+  for delete using (
+    exists (
+      select 1 from public.convoy_participants cp
+      where cp.convoy_id = convoy_queue.convoy_id and cp.user_id = auth.uid()
+    )
+  );
+
+-- Realtime publications.
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='convoys')
+  then execute 'alter publication supabase_realtime add table public.convoys'; end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='convoy_participants')
+  then execute 'alter publication supabase_realtime add table public.convoy_participants'; end if;
+end $$;
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='convoy_queue')
+  then execute 'alter publication supabase_realtime add table public.convoy_queue'; end if;
+end $$;

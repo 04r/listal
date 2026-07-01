@@ -1,6 +1,17 @@
 import { app, shell, BrowserWindow, session, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+
+// Second-account testing hook. Set LISTAL_PROFILE=<name> before launching a
+// second dev instance and it gets its own userData dir → its own localStorage
+// → its own Supabase session. Lets you run two accounts side by side without
+// signing in and out.
+const profileName = process.env.LISTAL_PROFILE
+if (profileName && /^[a-zA-Z0-9_-]{1,32}$/.test(profileName)) {
+  const base = app.getPath('userData')
+  app.setPath('userData', `${base}-${profileName}`)
+  console.log('[listal] using isolated profile', profileName, 'at', app.getPath('userData'))
+}
 import icon from '../../resources/icon.png?asset'
 import { registerPlaybackIpc } from './ipc/playback'
 import { registerLibraryIpc } from './ipc/library'
@@ -94,6 +105,22 @@ app.whenReady().then(() => {
   void initDiscord()
   ipcMain.on('open-external', (_e, url: string) => {
     if (typeof url === 'string' && /^https?:\/\//.test(url)) void shell.openExternal(url)
+  })
+
+  // Renderer pings us when the theme changes so we can retint the native
+  // window-controls overlay that lives outside the WebContents.
+  ipcMain.on('window:set-theme', (_e, isDark: boolean) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      try {
+        win.setTitleBarOverlay({
+          color: isDark ? '#1e1e1e' : '#e6e6e6',
+          symbolColor: isDark ? '#eaeaea' : '#000000'
+        })
+        win.setBackgroundColor(isDark ? '#1c1c1c' : '#ececec')
+      } catch {
+        /* not on Windows or not a titleBarOverlay window */
+      }
+    }
   })
 
   createWindow()

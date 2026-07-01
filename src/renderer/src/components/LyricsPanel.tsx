@@ -1,15 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Loader2, X, Mic2 } from 'lucide-react'
-import type { LyricsResult } from '../../../preload'
 import { usePlayer } from '../stores/player'
+import { useLyrics } from '../stores/lyrics'
 
 interface Props {
   onClose: () => void
 }
-
-// Cache fetched lyrics by source URL so flipping back and forth doesn't
-// re-hit the upstream APIs. Map-as-module-state is fine for single-pane lifetime.
-const cache = new Map<string, LyricsResult>()
 
 const SOURCE_LABEL: Record<string, string> = {
   lrclib: 'LRCLIB',
@@ -26,52 +22,10 @@ export function LyricsPanel({ onClose }: Props): React.JSX.Element {
   const durationSec = usePlayer((s) => s.durationSec)
   const seekTo = usePlayer((s) => s.seekTo)
 
-  const [lyrics, setLyrics] = useState<LyricsResult | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  // Fetch on track change. We key on sourceUrl so two distinct uploads of the
-  // same song don't share a cache entry — the user might have curated one.
-  useEffect(() => {
-    if (!track) {
-      setLyrics(null)
-      setLoading(false)
-      setError(null)
-      return
-    }
-    const key = track.sourceUrl
-    const cached = cache.get(key)
-    if (cached) {
-      setLyrics(cached)
-      setLoading(false)
-      setError(null)
-      return
-    }
-    let cancelled = false
-    setLyrics(null)
-    setLoading(true)
-    setError(null)
-    const artist = (track.artist ?? '').replace(/\s*[-–—]\s*topic\s*$/i, '').trim()
-    const title = track.title
-    const dur = track.durationMs ? Math.round(track.durationMs / 1000) : null
-    window.api
-      .getLyrics(artist, title, dur)
-      .then((r) => {
-        if (cancelled) return
-        if (r.ok) {
-          cache.set(key, r.data)
-          setLyrics(r.data)
-        } else {
-          setError(r.error)
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [track?.sourceUrl])
+  // Fetching happens in App.tsx on track change; we just render.
+  const lyrics = useLyrics((s) => s.data)
+  const loading = useLyrics((s) => s.loading)
+  const error = useLyrics((s) => s.error)
 
   // Find the index of the line that should currently be highlighted.
   const synced = lyrics?.synced ?? null
@@ -101,7 +55,7 @@ export function LyricsPanel({ onClose }: Props): React.JSX.Element {
 
   return (
     <aside className="flex h-full w-[360px] shrink-0 flex-col border-l border-[var(--color-border-strong)] bg-[var(--color-shell)]">
-      <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border)] bg-[linear-gradient(#f0f0f0,#e6e6e6)] px-2 text-[11px]">
+      <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 text-[11px]">
         <Mic2 size={11} />
         <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
           Lyrics
@@ -186,7 +140,7 @@ export function LyricsPanel({ onClose }: Props): React.JSX.Element {
       </div>
 
       {synced && track && durationSec > 0 && (
-        <div className="flex h-6 items-center justify-between border-t border-[var(--color-border)] bg-[linear-gradient(#f0f0f0,#e0e0e0)] px-2 text-[10.5px] text-[var(--color-text-muted)]">
+        <div className="flex h-6 items-center justify-between border-t border-[var(--color-border)] bg-[var(--grad-header-strong)] px-2 text-[10.5px] text-[var(--color-text-muted)]">
           <span>{synced.length} lines</span>
           <span>{lyrics?.trackName ?? track.title}</span>
         </div>

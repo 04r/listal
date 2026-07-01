@@ -1,37 +1,41 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  Play,
-  Pause,
-  Square,
-  SkipBack,
-  SkipForward,
-  Loader2,
-  Volume2,
-  VolumeX,
-  Search,
-  X,
-  Mic2,
-  Users
-} from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { usePlayer } from '../stores/player'
 import { useLibrary } from '../stores/library'
 import { useAuth } from '../stores/auth'
+import { TransportZone } from './TransportZone'
 
 interface ToolbarProps {
   lyricsOpen: boolean
   onToggleLyrics: () => void
   friendsOpen: boolean
   onToggleFriends: () => void
+  convoyOpen: boolean
+  onToggleConvoy: () => void
+  queueOpen: boolean
+  onToggleQueue: () => void
   onOpenAuth: () => void
 }
 
-// foobar2000-style top chrome: title-area / menubar-row + transport-and-sliders
-// row + a thin search row. The window controls (overlay) live in the menubar.
+// Top chrome: title-area / menubar-row + top-zone transport row + search row.
+// The other zones (bottom/left/right) render from App.tsx directly so they
+// can sit alongside the sidebar and content.
 export function Toolbar(props: ToolbarProps): React.JSX.Element {
   return (
     <div className="shrink-0 border-b border-[var(--color-border-strong)] bg-[var(--color-bg)]">
       <Menubar onOpenAuth={props.onOpenAuth} />
-      <TransportRow {...props} />
+      <TransportZone
+        zone="top"
+        orientation="horizontal"
+        lyricsOpen={props.lyricsOpen}
+        onToggleLyrics={props.onToggleLyrics}
+        friendsOpen={props.friendsOpen}
+        onToggleFriends={props.onToggleFriends}
+        convoyOpen={props.convoyOpen}
+        onToggleConvoy={props.onToggleConvoy}
+        queueOpen={props.queueOpen}
+        onToggleQueue={props.onToggleQueue}
+      />
       <SearchRow />
     </div>
   )
@@ -103,6 +107,21 @@ function Menubar({ onOpenAuth }: { onOpenAuth: () => void }): React.JSX.Element 
         label: 'Toggle friends panel',
         shortcut: 'Ctrl+F',
         onClick: () => window.dispatchEvent(new CustomEvent('listal:toggle-friends'))
+      },
+      {
+        label: 'Toggle queue panel',
+        onClick: () => window.dispatchEvent(new CustomEvent('listal:toggle-queue'))
+      },
+      {
+        label: 'Convoy',
+        shortcut: 'Ctrl+J',
+        onClick: () => window.dispatchEvent(new CustomEvent('listal:toggle-convoy'))
+      },
+      { type: 'separator' },
+      {
+        label: 'Settings…',
+        shortcut: 'Ctrl+,',
+        onClick: () => window.dispatchEvent(new CustomEvent('listal:open-settings'))
       }
     ],
     Playback: [
@@ -131,11 +150,36 @@ function Menubar({ onOpenAuth }: { onOpenAuth: () => void }): React.JSX.Element 
       },
       { type: 'separator' },
       { label: 'About Listal', onClick: showAbout }
-    ]
+    ],
+    Account: profile
+      ? [
+          {
+            label: `Signed in as @${profile.username}`,
+            onClick: () => window.dispatchEvent(new CustomEvent('listal:open-profile'))
+          },
+          { type: 'separator' },
+          {
+            label: 'Edit profile…',
+            onClick: () => window.dispatchEvent(new CustomEvent('listal:open-profile'))
+          },
+          {
+            label: 'Friends',
+            shortcut: 'Ctrl+F',
+            onClick: () => window.dispatchEvent(new CustomEvent('listal:toggle-friends'))
+          },
+          { type: 'separator' },
+          { label: 'Sign out', onClick: () => void signOut(), danger: true }
+        ]
+      : [
+          {
+            label: 'Sign in / Sign up…',
+            onClick: onOpenAuth
+          }
+        ]
   }
 
   return (
-    <div className="drag flex h-7 items-center gap-3 border-b border-[var(--color-border)] bg-[linear-gradient(#f8f8f8,#e6e6e6)] px-2 text-[11px] text-[var(--color-text)]">
+    <div className="drag flex h-7 items-center gap-3 border-b border-[var(--color-border)] bg-[var(--grad-titlebar)] px-2 text-[11px] text-[var(--color-text)]">
       <span className="no-drag flex items-center gap-2">
         <span className="font-semibold">Listal</span>
         {track && (
@@ -160,15 +204,26 @@ function Menubar({ onOpenAuth }: { onOpenAuth: () => void }): React.JSX.Element 
           />
         ))}
       </span>
-      <span className="no-drag ml-auto pr-[140px]">
+      <span className="no-drag ml-auto flex items-center gap-2 pr-[140px]">
         {initializing ? (
           <span className="text-[var(--color-text-dim)]">…</span>
         ) : profile ? (
           <button
-            onClick={() => void signOut()}
-            title={`Sign out @${profile.username}`}
-            className="hover:underline"
+            onClick={() => window.dispatchEvent(new CustomEvent('listal:open-profile'))}
+            title="Edit profile"
+            className="flex items-center gap-1.5 hover:underline"
           >
+            {profile.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt=""
+                className="h-4 w-4 rounded-full border border-[var(--color-border)] object-cover"
+              />
+            ) : (
+              <span className="grid h-4 w-4 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[9px] font-semibold text-[var(--color-text-muted)]">
+                {profile.username.slice(0, 1).toUpperCase()}
+              </span>
+            )}
             @{profile.username}
           </button>
         ) : (
@@ -206,8 +261,24 @@ function MenuButton({
   onHoverWhileMenuOpen: () => void
   onClose: () => void
 }): React.JSX.Element {
+  const rootRef = useRef<HTMLSpanElement | null>(null)
+
+  // Close on outside-click via document, so we don't need an overlay div
+  // that blocks hover events on sibling menus (which was breaking the
+  // "hover left to switch to previous menu" behaviour).
+  useEffect(() => {
+    if (!open) return
+    const onDocDown = (e: MouseEvent): void => {
+      const el = rootRef.current
+      if (!el) return
+      if (!el.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', onDocDown)
+    return () => document.removeEventListener('mousedown', onDocDown)
+  }, [open, onClose])
+
   return (
-    <span className="relative">
+    <span ref={rootRef} className="relative">
       <button
         onClick={() => (open ? onClose() : onOpen())}
         onMouseEnter={onHoverWhileMenuOpen}
@@ -219,7 +290,6 @@ function MenuButton({
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-30" onClick={onClose} />
           <div className="absolute left-0 top-full z-40 min-w-[200px] border border-[var(--color-border-strong)] bg-[var(--color-shell)] py-1 shadow-2xl">
             {items.map((item, i) => {
               if (item.type === 'separator')
@@ -251,143 +321,6 @@ function MenuButton({
   )
 }
 
-function TransportRow({
-  lyricsOpen,
-  onToggleLyrics,
-  friendsOpen,
-  onToggleFriends
-}: ToolbarProps): React.JSX.Element {
-  const queue = usePlayer((s) => s.queue)
-  const index = usePlayer((s) => s.index)
-  const playing = usePlayer((s) => s.playing)
-  const loading = usePlayer((s) => s.loading)
-  const durationSec = usePlayer((s) => s.durationSec)
-  const positionSec = usePlayer((s) => s.positionSec)
-  const volume = usePlayer((s) => s.volume)
-  const toggle = usePlayer((s) => s.toggle)
-  const next = usePlayer((s) => s.next)
-  const prev = usePlayer((s) => s.prev)
-  const seekTo = usePlayer((s) => s.seekTo)
-  const setVolume = usePlayer((s) => s.setVolume)
-  const toggleMute = usePlayer((s) => s.toggleMute)
-
-  const canPlay = index >= 0 && index < queue.length
-  const hasNext = index >= 0 && index + 1 < queue.length
-  const hasPrev = index > 0
-
-  return (
-    <div className="flex h-9 items-center gap-2 border-b border-[var(--color-border)] bg-[linear-gradient(#f4f4f4,#e8e8e8)] px-2">
-      <TbButton title="Stop" onClick={() => seekTo(0)} disabled={!canPlay}>
-        <Square size={11} fill="currentColor" />
-      </TbButton>
-      <TbButton
-        title={playing ? 'Pause' : 'Play'}
-        onClick={toggle}
-        disabled={!canPlay}
-      >
-        {loading ? (
-          <Loader2 size={11} className="animate-spin" />
-        ) : playing ? (
-          <Pause size={11} fill="currentColor" />
-        ) : (
-          <Play size={11} fill="currentColor" className="translate-x-[1px]" />
-        )}
-      </TbButton>
-      <TbButton title="Previous" onClick={() => void prev()} disabled={!hasPrev}>
-        <SkipBack size={11} fill="currentColor" />
-      </TbButton>
-      <TbButton title="Next" onClick={() => void next()} disabled={!hasNext}>
-        <SkipForward size={11} fill="currentColor" />
-      </TbButton>
-
-      <div className="mx-2 h-5 w-px bg-[var(--color-border-strong)]" />
-
-      {/* Volume slider — classic foobar's left side. */}
-      <button
-        onClick={toggleMute}
-        className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-        aria-label={volume === 0 ? 'Unmute' : 'Mute'}
-        title={volume === 0 ? 'Unmute' : 'Mute'}
-      >
-        {volume === 0 ? <VolumeX size={13} /> : <Volume2 size={13} />}
-      </button>
-      <input
-        type="range"
-        min={0}
-        max={1}
-        step={0.01}
-        value={volume}
-        onChange={(e) => setVolume(Number(e.target.value))}
-        className="w-24"
-      />
-
-      {/* Seek slider stretches to fill the row */}
-      <span className="ml-3 w-9 text-right text-[11px] tabular-nums text-[var(--color-text-muted)]">
-        {fmt(positionSec)}
-      </span>
-      <input
-        type="range"
-        min={0}
-        max={durationSec || 1}
-        step={0.1}
-        value={positionSec}
-        disabled={!canPlay || durationSec <= 0}
-        onChange={(e) => seekTo(Number(e.target.value))}
-        className="flex-1"
-      />
-      <span className="w-9 text-[11px] tabular-nums text-[var(--color-text-muted)]">
-        {fmt(durationSec)}
-      </span>
-
-      <button
-        onClick={onToggleLyrics}
-        title="Lyrics"
-        className={`ml-1 grid h-6 w-7 place-items-center border border-[var(--color-border-strong)] ${
-          lyricsOpen
-            ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)]'
-            : 'bg-[linear-gradient(#ffffff,#dcdcdc)] text-[var(--color-text)] hover:bg-[linear-gradient(#ffffff,#cccccc)]'
-        }`}
-      >
-        <Mic2 size={11} />
-      </button>
-
-      <button
-        onClick={onToggleFriends}
-        title="Friends"
-        className={`grid h-6 w-7 place-items-center border border-[var(--color-border-strong)] ${
-          friendsOpen
-            ? 'bg-[var(--color-accent)] text-[var(--color-accent-fg)]'
-            : 'bg-[linear-gradient(#ffffff,#dcdcdc)] text-[var(--color-text)] hover:bg-[linear-gradient(#ffffff,#cccccc)]'
-        }`}
-      >
-        <Users size={11} />
-      </button>
-    </div>
-  )
-}
-
-function TbButton({
-  children,
-  onClick,
-  title,
-  disabled
-}: {
-  children: React.ReactNode
-  onClick: () => void
-  title: string
-  disabled?: boolean
-}): React.JSX.Element {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className="grid h-6 w-7 place-items-center border border-[var(--color-border-strong)] bg-[linear-gradient(#ffffff,#dcdcdc)] text-[var(--color-text)] hover:bg-[linear-gradient(#ffffff,#cccccc)] active:bg-[#c0c0c0] disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      {children}
-    </button>
-  )
-}
 
 function SearchRow(): React.JSX.Element {
   const { view, setView } = useLibrary()
@@ -449,11 +382,4 @@ export function useSearchQuery(initial = ''): [string, (v: string) => void] {
     return () => window.removeEventListener(SEARCH_EVT, handler)
   }, [])
   return [q, setQ]
-}
-
-function fmt(sec: number): string {
-  if (!isFinite(sec) || sec < 0) return '0:00'
-  const m = Math.floor(sec / 60)
-  const s = Math.floor(sec % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
 }

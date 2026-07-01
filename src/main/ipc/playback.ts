@@ -6,12 +6,15 @@ export type ResolveStreamResult =
   | { ok: false; error: string }
 
 export function registerPlaybackIpc(): void {
-  ipcMain.handle('playback:resolve', async (_evt, url: string): Promise<ResolveStreamResult> => {
-    try {
-      const data = await resolveStream(url)
-      return { ok: true, data }
-    } catch (e) {
-      return { ok: false, error: (e as Error).message }
+  ipcMain.handle(
+    'playback:resolve',
+    async (_evt, url: string, priority = false): Promise<ResolveStreamResult> => {
+      try {
+        const data = await resolveStream(url, priority)
+        return { ok: true, data }
+      } catch (e) {
+        return { ok: false, error: (e as Error).message }
+      }
     }
-  })
+  )
 }

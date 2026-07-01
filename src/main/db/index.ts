@@ -45,6 +45,16 @@ CREATE TABLE IF NOT EXISTS tokens (
 
 CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist
   ON playlist_tracks(playlist_id, position);
+
+CREATE TABLE IF NOT EXISTS stream_cache (
+  source_url TEXT PRIMARY KEY,
+  stream_url TEXT NOT NULL,
+  title TEXT NOT NULL,
+  uploader TEXT,
+  duration_sec REAL,
+  thumbnail TEXT,
+  expires_at INTEGER NOT NULL
+);
 `
 
 let db: Database.Database | null = null

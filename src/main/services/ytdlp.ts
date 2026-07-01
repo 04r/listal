@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { is } from '@electron-toolkit/utils'
+import { getDb } from '../db'
 
 // yt-dlp lives in resources/bin/. In dev it's read from the repo, in a packaged
 // build electron-builder's `asarUnpack: resources/**` unpacks it next to the
@@ -45,6 +46,37 @@ const FALLBACK_TTL_MS = 30 * 60 * 1000
 const pending = new Map<string, Promise<ResolvedStream>>()
 const ready = new Map<string, { result: ResolvedStream; expiresAt: number }>()
 
+// Concurrency gate for the yt-dlp subprocess. Each Python spawn eats
+// ~80-150 MB of memory and a burst of CPU; running 5 in parallel spikes the
+// machine. The renderer prefetches aggressively so we throttle at the wire.
+// Priority resolves (the track the user is about to hear) jump the queue;
+// prefetches wait.
+const MAX_CONCURRENT_YTDLP = 2
+let inFlight = 0
+type Waiter = { run: () => void; priority: boolean }
+const waiters: Waiter[] = []
+
+function acquireSlot(priority: boolean): Promise<void> {
+  return new Promise((resolveP) => {
+    const run = (): void => {
+      inFlight++
+      resolveP()
+    }
+    if (inFlight < MAX_CONCURRENT_YTDLP) {
+      run()
+      return
+    }
+    if (priority) waiters.unshift({ run, priority })
+    else waiters.push({ run, priority })
+  })
+}
+
+function releaseSlot(): void {
+  inFlight--
+  const next = waiters.shift()
+  if (next) next.run()
+}
+
 function expiryFromStreamUrl(streamUrl: string): number {
   try {
     const exp = new URL(streamUrl).searchParams.get('expire')
@@ -59,11 +91,80 @@ function expiryFromStreamUrl(streamUrl: string): number {
   return Date.now() + FALLBACK_TTL_MS
 }
 
+// Restore anything from the on-disk cache into the in-memory map on first
+// call. Cheap enough to do lazily instead of at app boot.
+let diskCacheLoaded = false
+function loadDiskCache(): void {
+  if (diskCacheLoaded) return
+  diskCacheLoaded = true
+  try {
+    const rows = getDb()
+      .prepare(
+        'SELECT source_url, stream_url, title, uploader, duration_sec, thumbnail, expires_at FROM stream_cache WHERE expires_at > ?'
+      )
+      .all(Date.now()) as Array<{
+      source_url: string
+      stream_url: string
+      title: string
+      uploader: string | null
+      duration_sec: number | null
+      thumbnail: string | null
+      expires_at: number
+    }>
+    for (const r of rows) {
+      ready.set(r.source_url, {
+        result: {
+          streamUrl: r.stream_url,
+          title: r.title,
+          uploader: r.uploader,
+          durationSec: r.duration_sec,
+          thumbnail: r.thumbnail
+        },
+        expiresAt: r.expires_at
+      })
+    }
+    // Housekeeping: drop rows that already expired.
+    getDb().prepare('DELETE FROM stream_cache WHERE expires_at <= ?').run(Date.now())
+    console.log(`[ytdlp] warmed ${rows.length} cached stream URLs from disk`)
+  } catch (e) {
+    console.warn('[ytdlp] disk cache load failed', e)
+  }
+}
+
+function persistToDisk(url: string, result: ResolvedStream, expiresAt: number): void {
+  try {
+    getDb()
+      .prepare(
+        `INSERT INTO stream_cache (source_url, stream_url, title, uploader, duration_sec, thumbnail, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(source_url) DO UPDATE SET
+           stream_url = excluded.stream_url,
+           title = excluded.title,
+           uploader = excluded.uploader,
+           duration_sec = excluded.duration_sec,
+           thumbnail = excluded.thumbnail,
+           expires_at = excluded.expires_at`
+      )
+      .run(
+        url,
+        result.streamUrl,
+        result.title,
+        result.uploader,
+        result.durationSec,
+        result.thumbnail,
+        expiresAt
+      )
+  } catch (e) {
+    console.warn('[ytdlp] persist to disk failed', e)
+  }
+}
+
 // Runs yt-dlp and prints exactly five lines: url, title, uploader, duration,
 // thumbnail. Using `--print` instead of `-j` is critical — `-j` ignores the
 // format selector and dumps the full info-dict (hundreds of KB for YouTube),
 // which can deadlock the stdout pipe.
-export function resolveStream(url: string): Promise<ResolvedStream> {
+export function resolveStream(url: string, priority = false): Promise<ResolvedStream> {
+  loadDiskCache()
   const cached = ready.get(url)
   if (cached && cached.expiresAt > Date.now()) {
     return Promise.resolve(cached.result)
@@ -71,7 +172,14 @@ export function resolveStream(url: string): Promise<ResolvedStream> {
   const inflight = pending.get(url)
   if (inflight) return inflight
 
-  const p = doResolve(url).finally(() => pending.delete(url))
+  const p = (async (): Promise<ResolvedStream> => {
+    await acquireSlot(priority)
+    try {
+      return await doResolve(url)
+    } finally {
+      releaseSlot()
+    }
+  })().finally(() => pending.delete(url))
   pending.set(url, p)
   return p
 }
@@ -90,14 +198,17 @@ function doResolve(url: string): Promise<ResolvedStream> {
 
   return new Promise((resolveP, rejectP) => {
     const args = [
+      // Prefer progressive (Howler can play direct HTTPS audio). Fall back to
+      // HLS (m3u8) as a second choice for SoundCloud — most SC tracks only
+      // expose HLS, and the renderer plays those via hls.js. DASH is still
+      // excluded because we don't mux.
       '-f',
-      'bestaudio[protocol=http][has_drm!=true]/bestaudio[protocol=https][has_drm!=true]/bestaudio[protocol!*=m3u8][protocol!=dash][has_drm!=true]/bestaudio[has_drm!=true]',
+      'bestaudio*[has_drm!=true][protocol!*=m3u8][protocol!*=dash]/bestaudio[has_drm!=true][protocol!*=dash]/bestaudio[has_drm!=true]',
+      '-S',
+      'proto:https,abr,asr,acodec:opus,ext:webm:m4a',
       '--no-warnings',
       '--no-playlist',
-      // Skip the HEAD probe yt-dlp normally does to verify each format URL —
-      // saves ~300-700ms per resolve. Format selector still works.
       '--no-check-formats',
-      // Fail fast on flaky network instead of waiting through 10 retries.
       '--socket-timeout',
       '8',
       '--retries',
@@ -170,6 +281,7 @@ function doResolve(url: string): Promise<ResolvedStream> {
       }
       const expiresAt = expiryFromStreamUrl(streamUrl)
       ready.set(url, { result, expiresAt })
+      persistToDisk(url, result, expiresAt)
       console.log(
         `[ytdlp] resolved "${title}" (${durationSec}s, cached until ${new Date(expiresAt).toLocaleTimeString()})`
       )
@@ -625,6 +737,91 @@ export async function getArtistDiscography(name: string): Promise<ArtistDiscogra
     source: tracks.length > 0 ? 'search' : 'none',
     tracks
   }
+}
+
+// ---------------------------------------------------------------------------
+// Song Radio (YouTube "Mix" playlists)
+// ---------------------------------------------------------------------------
+
+// YouTube auto-generates a "Mix" playlist for every video at
+// ?v=<id>&list=RD<id>. It's the same recommendation feed you see in YouTube
+// Music's "Start radio". We resolve that playlist with --flat-playlist so we
+// don't need to hit the video pages, then hand back plain SearchResults —
+// the player resolves stream URLs lazily as usual.
+
+const YT_ID_RE = /(?:v=|youtu\.be\/|music\.youtube\.com\/watch\?v=|shorts\/)([a-zA-Z0-9_-]{11})/
+
+function extractYoutubeId(url: string): string | null {
+  const m = url.match(YT_ID_RE)
+  return m ? m[1] : null
+}
+
+export function songRadio(sourceUrl: string, limit = 25): Promise<SearchResult[]> {
+  const id = extractYoutubeId(sourceUrl)
+  if (!id) return Promise.resolve([])
+  const bin = ytdlpPath()
+  if (!existsSync(bin)) return Promise.resolve([])
+  const mixUrl = `https://www.youtube.com/watch?v=${id}&list=RD${id}`
+  return new Promise((resolveP) => {
+    const proc = spawn(
+      bin,
+      [
+        '--flat-playlist',
+        '--no-warnings',
+        '--playlist-end',
+        String(limit),
+        '--print',
+        '%(.{id,webpage_url,title,uploader,duration,thumbnails})j',
+        mixUrl
+      ],
+      { windowsHide: true }
+    )
+    let stdout = ''
+    let stderr = ''
+    proc.stdout.on('data', (c) => {
+      stdout += c.toString()
+    })
+    proc.stderr.on('data', (c) => {
+      stderr += c.toString()
+    })
+    const kill = setTimeout(() => proc.kill('SIGKILL'), TIMEOUT_MS)
+    proc.on('error', () => {
+      clearTimeout(kill)
+      resolveP([])
+    })
+    proc.on('close', () => {
+      clearTimeout(kill)
+      if (stderr && !stdout) {
+        console.warn(`[ytdlp] radio ${id} stderr=${stderr.slice(0, 200)}`)
+      }
+      const out: SearchResult[] = []
+      const seen = new Set<string>([id])
+      for (const line of stdout.split(/\r?\n/)) {
+        if (!line.trim()) continue
+        try {
+          const e = JSON.parse(line) as SearchEntry & { id?: string }
+          const src = e.webpage_url
+          if (!src) continue
+          const entryId = e.id ?? extractYoutubeId(src)
+          if (entryId) {
+            if (seen.has(entryId)) continue
+            seen.add(entryId)
+          }
+          out.push({
+            service: 'youtube',
+            sourceUrl: src,
+            title: e.title ?? 'Unknown',
+            uploader: e.uploader ?? null,
+            durationSec: typeof e.duration === 'number' ? e.duration : null,
+            thumbnail: pickThumb(e.thumbnails)
+          })
+        } catch {
+          /* skip */
+        }
+      }
+      resolveP(out)
+    })
+  })
 }
 
 function pickThumb(arr: SearchEntry['thumbnails']): string | null {

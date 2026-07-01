@@ -5,6 +5,7 @@ import {
   search,
   getArtistDiscography,
   getUploaderUploads,
+  songRadio,
   type SearchResult,
   type ArtistDiscography,
   type ArtistTrack,
@@ -179,6 +180,10 @@ export function registerLibraryIpc(): void {
   // ---- search ----
   ipcMain.handle('library:search', async (_e, query: string): Promise<SearchResult[]> => {
     return await search(query, 6)
+  })
+
+  ipcMain.handle('library:songRadio', async (_e, sourceUrl: string): Promise<SearchResult[]> => {
+    return await songRadio(sourceUrl, 60)
   })
 
   ipcMain.handle(

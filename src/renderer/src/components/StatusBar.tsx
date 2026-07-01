@@ -31,7 +31,7 @@ export function StatusBar(): React.JSX.Element {
 
   return (
     <div
-      className={`flex h-6 shrink-0 items-center gap-2 border-t border-[var(--color-border-strong)] bg-[linear-gradient(#f0f0f0,#e0e0e0)] px-2 text-[11px] ${
+      className={`flex h-6 shrink-0 items-center gap-2 border-t border-[var(--color-border-strong)] bg-[var(--grad-header-strong)] px-2 text-[11px] ${
         error ? 'text-[var(--color-danger)]' : 'text-[var(--color-text)]'
       }`}
     >

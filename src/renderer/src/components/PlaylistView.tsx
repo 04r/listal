@@ -94,7 +94,7 @@ export function PlaylistView({ playlistId }: Props): React.JSX.Element {
           <button
             onClick={() => tracks.length > 0 && void playQueue(tracks, 0)}
             disabled={tracks.length === 0}
-            className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[linear-gradient(#fff,#dcdcdc)] text-[var(--color-text)] hover:bg-[linear-gradient(#fff,#cccccc)] disabled:opacity-40"
+            className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] text-[var(--color-text)] hover:bg-[var(--grad-btn-hover)] disabled:opacity-40"
             title="Play playlist"
           >
             <Play size={9} fill="currentColor" />
@@ -102,7 +102,7 @@ export function PlaylistView({ playlistId }: Props): React.JSX.Element {
           {editingName ? (
             <button
               onClick={() => void saveName()}
-              className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[linear-gradient(#fff,#dcdcdc)] text-[var(--color-text)] hover:bg-[linear-gradient(#fff,#cccccc)]"
+              className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] text-[var(--color-text)] hover:bg-[var(--grad-btn-hover)]"
               title="Save name"
             >
               <Check size={11} />
@@ -110,7 +110,7 @@ export function PlaylistView({ playlistId }: Props): React.JSX.Element {
           ) : (
             <button
               onClick={() => setEditingName(true)}
-              className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[linear-gradient(#fff,#dcdcdc)] text-[var(--color-text)] hover:bg-[linear-gradient(#fff,#cccccc)]"
+              className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] text-[var(--color-text)] hover:bg-[var(--grad-btn-hover)]"
               title="Rename"
             >
               <Pencil size={10} />
@@ -118,7 +118,7 @@ export function PlaylistView({ playlistId }: Props): React.JSX.Element {
           )}
           <button
             onClick={() => void destroy()}
-            className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[linear-gradient(#fff,#dcdcdc)] text-[var(--color-text)] hover:bg-[linear-gradient(#fff,#cccccc)]"
+            className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] text-[var(--color-text)] hover:bg-[var(--grad-btn-hover)]"
             title="Delete playlist"
           >
             <Trash2 size={10} />

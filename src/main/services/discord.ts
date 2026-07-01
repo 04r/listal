@@ -21,6 +21,8 @@ export interface PresenceInput {
   isPlaying: boolean
   // monotonic wall-clock when the current position was sampled (ms)
   capturedAtMs: number
+  // Optional source URL so we can show a "Listen on YouTube" button.
+  sourceUrl?: string | null
 }
 
 function scheduleRetry(): void {
@@ -60,19 +62,29 @@ function applyActivity(p: PresenceInput): void {
   if (!client || !ready) return
   // Discord activity types: 0 Playing, 2 Listening, 3 Watching, 5 Competing.
   // The library's types don't yet expose `type` so we cast.
+  const artistOrSvc = p.artist || serviceLabel(p.service)
+  // When paused, encode position/duration into the state text so Discord still
+  // shows useful info (Discord clears its own timer when timestamps aren't set).
+  let state = clip(artistOrSvc, 128)
+  if (!p.isPlaying && p.durationSec && p.durationSec > 0) {
+    state = clip(`${artistOrSvc} · paused ${fmtTime(p.positionSec)} / ${fmtTime(p.durationSec)}`, 128)
+  } else if (!p.isPlaying) {
+    state = clip(`${artistOrSvc} · paused`, 128)
+  }
+
   const activity: Record<string, unknown> = {
     type: 2,
     details: clip(p.title, 128) || 'Music',
-    state: clip(p.artist || serviceLabel(p.service), 128),
+    state,
     largeImageKey: 'listal',
-    largeImageText: 'Listal',
+    largeImageText: p.durationSec ? `Listal · ${fmtTime(p.durationSec)}` : 'Listal',
     smallImageKey: serviceImage(p.service),
     smallImageText: serviceLabel(p.service),
     instance: false
   }
   if (p.isPlaying && p.durationSec && p.durationSec > 0) {
     // Anchor the timeline to the moment we sampled the position so Discord's
-    // own clock shows a clean countdown.
+    // own clock shows a clean countdown (elapsed bar + remaining time).
     const startMs = p.capturedAtMs - p.positionSec * 1000
     const endMs = startMs + p.durationSec * 1000
     activity.startTimestamp = Math.floor(startMs / 1000)
@@ -80,9 +92,21 @@ function applyActivity(p: PresenceInput): void {
   } else if (p.isPlaying) {
     activity.startTimestamp = Math.floor((p.capturedAtMs - p.positionSec * 1000) / 1000)
   }
+  if (p.sourceUrl && /^https?:\/\//.test(p.sourceUrl)) {
+    activity.buttons = [
+      { label: `Listen on ${serviceLabel(p.service)}`, url: p.sourceUrl }
+    ]
+  }
   void client.setActivity(activity as RPC.Presence).catch((e) => {
     console.warn('[discord] setActivity error', (e as Error).message)
   })
+}
+
+function fmtTime(sec: number): string {
+  if (!isFinite(sec) || sec < 0) return '0:00'
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
 }
 
 export function setPresence(p: PresenceInput): void {

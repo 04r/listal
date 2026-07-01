@@ -22,6 +22,74 @@
   --color-link: #1c5fa9;
 }
 
+/* Gradient palette used across every button, header, and title bar. Defined
+   with `--grad-*` so dark mode can swap them all in one place. */
+:root {
+  --grad-btn: linear-gradient(#ffffff, #dcdcdc);
+  --grad-btn-hover: linear-gradient(#ffffff, #cccccc);
+  --grad-header: linear-gradient(#f0f0f0, #e6e6e6);
+  --grad-header-strong: linear-gradient(#f0f0f0, #e0e0e0);
+  --grad-titlebar: linear-gradient(#f8f8f8, #e6e6e6);
+  --grad-transport: linear-gradient(#f4f4f4, #e8e8e8);
+  --grad-primary: linear-gradient(#5a8ee0, #2f60b8);
+  --grad-primary-hover: linear-gradient(#6a9eee, #3f70c8);
+}
+html[data-theme='dark'] {
+  --grad-btn: linear-gradient(#3a3a3a, #2a2a2a);
+  --grad-btn-hover: linear-gradient(#454545, #333333);
+  --grad-header: linear-gradient(#2f2f2f, #262626);
+  --grad-header-strong: linear-gradient(#2f2f2f, #232323);
+  --grad-titlebar: linear-gradient(#2a2a2a, #1e1e1e);
+  --grad-transport: linear-gradient(#2c2c2c, #232323);
+  --grad-primary: linear-gradient(#4a7dd0, #2a55a8);
+  --grad-primary-hover: linear-gradient(#5a8de0, #3a65b8);
+}
+
+/* Dark theme override. Set by the settings store via data-theme="dark". */
+html[data-theme='dark'] {
+  --color-bg: #1c1c1c;
+  --color-shell: #232323;
+  --color-surface: #1a1a1a;
+  --color-surface-2: #262626;
+  --color-surface-3: #303030;
+  --color-border: #3a3a3a;
+  --color-border-strong: #555555;
+  --color-text: #eaeaea;
+  --color-text-muted: #a8a8a8;
+  --color-text-dim: #7c7c7c;
+  --color-danger: #ff5c5c;
+}
+html[data-theme='dark'] body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+html[data-theme='dark'] *::-webkit-scrollbar-track {
+  background: var(--color-bg);
+  border-left: 1px solid var(--color-border);
+}
+html[data-theme='dark'] *::-webkit-scrollbar-thumb {
+  background: #404040;
+  border: 1px solid #2a2a2a;
+}
+html[data-theme='dark'] *::-webkit-scrollbar-thumb:hover {
+  background-color: #4a4a4a;
+}
+html[data-theme='dark'] input[type='range']::-webkit-slider-runnable-track {
+  background: #262626;
+  border-color: var(--color-border-strong);
+}
+html[data-theme='dark'] input[type='range']::-webkit-slider-thumb {
+  background: linear-gradient(#5a5a5a, #303030);
+  border-color: #666;
+}
+html[data-theme='dark'] input,
+html[data-theme='dark'] textarea,
+html[data-theme='dark'] select {
+  background: #1a1a1a;
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+}
+
 html,
 body,
 #root {

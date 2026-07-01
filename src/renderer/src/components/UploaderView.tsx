@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Play, Loader2, ExternalLink } from 'lucide-react'
-import type { UploaderUploads, Track } from '../../../preload'
+import type { UploaderUploads, Track, ArtistTrack } from '../../../preload'
 import { usePlayer } from '../stores/player'
 import { useLibrary } from '../stores/library'
 import { ContentSurface } from './LibraryView'
+
+type SortKey = 'default' | 'title' | 'duration_desc' | 'duration_asc'
+const PAGE_SIZE = 30
 
 interface Props {
   name: string
@@ -19,6 +22,8 @@ export function UploaderView({ name }: Props): React.JSX.Element {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busyUrl, setBusyUrl] = useState<string | null>(null)
+  const [sort, setSort] = useState<SortKey>('default')
+  const [page, setPage] = useState(0)
   const playQueue = usePlayer((s) => s.playQueue)
   const playing = usePlayer((s) => s.playing)
   const currentUrl = usePlayer((s) => (s.index >= 0 ? s.queue[s.index]?.sourceUrl : null))
@@ -27,6 +32,8 @@ export function UploaderView({ name }: Props): React.JSX.Element {
   useEffect(() => {
     let cancelled = false
     setData(null)
+    setPage(0)
+    setSort('default')
     setLoading(true)
     setError(null)
     window.api
@@ -43,6 +50,25 @@ export function UploaderView({ name }: Props): React.JSX.Element {
       cancelled = true
     }
   }, [name])
+
+  const sortedTracks = useMemo<ArtistTrack[]>(() => {
+    if (!data) return []
+    const arr = [...data.tracks]
+    if (sort === 'title') {
+      arr.sort((a, b) => a.title.localeCompare(b.title))
+    } else if (sort === 'duration_desc') {
+      arr.sort((a, b) => (b.durationSec ?? 0) - (a.durationSec ?? 0))
+    } else if (sort === 'duration_asc') {
+      arr.sort((a, b) => (a.durationSec ?? Infinity) - (b.durationSec ?? Infinity))
+    }
+    return arr
+  }, [data, sort])
+
+  const totalPages = Math.max(1, Math.ceil(sortedTracks.length / PAGE_SIZE))
+  const pageTracks = useMemo(
+    () => sortedTracks.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE),
+    [sortedTracks, page]
+  )
 
   async function playOne(sourceUrl: string): Promise<void> {
     setBusyUrl(sourceUrl)
@@ -80,6 +106,24 @@ export function UploaderView({ name }: Props): React.JSX.Element {
             <ExternalLink size={11} />
           </button>
         )}
+        {data && data.tracks.length > 0 && (
+          <label className="ml-auto flex items-center gap-1 text-[10.5px] text-[var(--color-text-muted)]">
+            Sort
+            <select
+              value={sort}
+              onChange={(e) => {
+                setSort(e.target.value as SortKey)
+                setPage(0)
+              }}
+              className="h-5 border border-[var(--color-border-strong)] bg-white px-1 text-[11px]"
+            >
+              <option value="default">Channel order</option>
+              <option value="title">Title (A–Z)</option>
+              <option value="duration_desc">Longest first</option>
+              <option value="duration_asc">Shortest first</option>
+            </select>
+          </label>
+        )}
       </div>
 
       {error && (
@@ -105,13 +149,14 @@ export function UploaderView({ name }: Props): React.JSX.Element {
       {/* Column header */}
       {!loading && data && data.tracks.length > 0 && (
         <>
-          <div className="sticky top-0 z-10 grid grid-cols-[40px_1fr_60px_28px] items-center gap-2 border-b border-[var(--color-border-strong)] bg-[linear-gradient(#f0f0f0,#e6e6e6)] px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+          <div className="sticky top-0 z-10 grid grid-cols-[40px_1fr_60px_28px] items-center gap-2 border-b border-[var(--color-border-strong)] bg-[var(--grad-header)] px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
             <span className="text-right">#</span>
             <span>Title</span>
             <span className="text-right">Time</span>
             <span></span>
           </div>
-          {data.tracks.map((t, i) => {
+          {pageTracks.map((t, i) => {
+            const absoluteIdx = page * PAGE_SIZE + i
             const isCurrent = t.sourceUrl === currentUrl
             return (
               <div
@@ -133,7 +178,7 @@ export function UploaderView({ name }: Props): React.JSX.Element {
                           isCurrent ? 'text-white' : 'text-[var(--color-text-muted)]'
                         }`}
                       >
-                        {isCurrent && playing ? '▶' : i + 1}
+                        {isCurrent && playing ? '▶' : absoluteIdx + 1}
                       </span>
                       <button
                         onClick={() => void playOne(t.sourceUrl)}
@@ -167,6 +212,28 @@ export function UploaderView({ name }: Props): React.JSX.Element {
               </div>
             )
           })}
+
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2 border-t border-[var(--color-border)] bg-[var(--grad-header)] px-2 py-1 text-[11px]">
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="border border-[var(--color-border-strong)] bg-[var(--grad-btn)] px-2 py-0.5 hover:bg-[var(--grad-btn-hover)] disabled:opacity-40"
+              >
+                ← Prev
+              </button>
+              <span className="text-[var(--color-text-muted)]">
+                Page {page + 1} / {totalPages} · {sortedTracks.length} uploads
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+                className="border border-[var(--color-border-strong)] bg-[var(--grad-btn)] px-2 py-0.5 hover:bg-[var(--grad-btn-hover)] disabled:opacity-40"
+              >
+                Next →
+              </button>
+            </div>
+          )}
         </>
       )}
     </ContentSurface>

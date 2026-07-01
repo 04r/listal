@@ -1,5 +1,5 @@
-import { useRef } from 'react'
-import { Play, Trash2, ExternalLink } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Play, Trash2, ExternalLink, Radio } from 'lucide-react'
 import type { Track } from '../../../preload'
 import { usePlayer } from '../stores/player'
 import { useLibrary } from '../stores/library'
@@ -26,6 +26,7 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
   const playing = usePlayer((s) => s.playing)
   const setView = useLibrary((s) => s.setView)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; track: Track } | null>(null)
 
   function onRowEnter(url: string): void {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
@@ -35,10 +36,31 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
   }
 
+  function onContextMenu(e: React.MouseEvent, t: Track): void {
+    e.preventDefault()
+    setMenu({ x: e.clientX, y: e.clientY, track: t })
+  }
+
+  function openSongRadio(seed: Track): void {
+    setMenu(null)
+    setView({ kind: 'radio', seedUrl: seed.sourceUrl, seedTitle: seed.title })
+  }
+
+  useEffect(() => {
+    if (!menu) return
+    const close = (): void => setMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [menu])
+
   return (
     <div>
       {/* Column header */}
-      <div className="sticky top-0 z-10 grid grid-cols-[40px_1fr_220px_140px_60px_28px] items-center gap-2 border-b border-[var(--color-border-strong)] bg-[linear-gradient(#f0f0f0,#e6e6e6)] px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+      <div className="sticky top-0 z-10 grid grid-cols-[40px_1fr_220px_140px_60px_28px] items-center gap-2 border-b border-[var(--color-border-strong)] bg-[var(--grad-header)] px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
         <span className="text-right">#</span>
         <span>Title</span>
         <span>Uploader</span>
@@ -53,6 +75,7 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
           <div
             key={t.id}
             onDoubleClick={() => onPlay(i)}
+            onContextMenu={(e) => onContextMenu(e, t)}
             onMouseEnter={() => onRowEnter(t.sourceUrl)}
             onMouseLeave={onRowLeave}
             className={`group grid h-6 grid-cols-[40px_1fr_220px_140px_60px_28px] items-center gap-2 border-b border-[var(--color-border)]/40 px-2 text-[12px] ${
@@ -136,6 +159,33 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
           Nothing here yet.
         </div>
       )}
+
+      {menu && (
+        <div
+          className="fixed z-50 min-w-[180px] border border-[var(--color-border-strong)] bg-[var(--color-shell)] py-1 text-[12px] shadow-2xl"
+          style={{ left: menu.x, top: menu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => openSongRadio(menu.track)}
+            className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
+          >
+            <Radio size={11} />
+            Song Radio
+          </button>
+          <button
+            onClick={() => {
+              window.electron.ipcRenderer.send('open-external', menu.track.sourceUrl)
+              setMenu(null)
+            }}
+            className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
+          >
+            <ExternalLink size={11} />
+            Open source
+          </button>
+        </div>
+      )}
+
     </div>
   )
 }

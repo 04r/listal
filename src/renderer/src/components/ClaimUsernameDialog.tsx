@@ -26,7 +26,7 @@ export function ClaimUsernameDialog(): React.JSX.Element {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40">
       <div className="w-[380px] border border-[var(--color-border-strong)] bg-[var(--color-shell)] shadow-2xl">
-        <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border)] bg-[linear-gradient(#f0f0f0,#e6e6e6)] px-2 text-[11px]">
+        <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 text-[11px]">
           <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
             Finish setup
           </span>
@@ -70,7 +70,7 @@ export function ClaimUsernameDialog(): React.JSX.Element {
             <button
               type="submit"
               disabled={busy}
-              className="grid h-6 min-w-[100px] place-items-center border border-[var(--color-border-strong)] bg-[linear-gradient(#ffffff,#dcdcdc)] px-3 text-[12px] hover:bg-[linear-gradient(#ffffff,#cccccc)] disabled:opacity-50"
+              className="grid h-6 min-w-[100px] place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] px-3 text-[12px] hover:bg-[var(--grad-btn-hover)] disabled:opacity-50"
             >
               {busy ? <Loader2 size={12} className="animate-spin" /> : 'Claim username'}
             </button>

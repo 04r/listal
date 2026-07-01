@@ -31,7 +31,7 @@ export function ChatPanel(): React.JSX.Element | null {
 
   return (
     <aside className="flex h-full w-[300px] shrink-0 flex-col border-l border-[var(--color-border-strong)] bg-[var(--color-shell)]">
-      <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border)] bg-[linear-gradient(#f0f0f0,#e6e6e6)] px-2 text-[11px]">
+      <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 text-[11px]">
         <span className="truncate font-semibold text-[var(--color-text)]">
           {peer.display_name ?? peer.username}
         </span>
@@ -90,7 +90,7 @@ export function ChatPanel(): React.JSX.Element | null {
         <button
           type="submit"
           disabled={!draft.trim()}
-          className="grid h-6 w-6 place-items-center border border-[var(--color-border-strong)] bg-[linear-gradient(#ffffff,#dcdcdc)] hover:bg-[linear-gradient(#ffffff,#cccccc)] disabled:opacity-40"
+          className="grid h-6 w-6 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] hover:bg-[var(--grad-btn-hover)] disabled:opacity-40"
         >
           <Send size={11} />
         </button>

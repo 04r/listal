@@ -6,6 +6,7 @@ export type View =
   | { kind: 'search' }
   | { kind: 'artist'; name: string }
   | { kind: 'uploader'; name: string }
+  | { kind: 'radio'; seedUrl: string; seedTitle: string }
 
 interface LibraryState {
   view: View

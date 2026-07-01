@@ -2,6 +2,17 @@ import { create } from 'zustand'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 
+// Dev builds always log. Opt out in DevTools via:
+//   localStorage.setItem('listal:social-debug', '0')
+// Turn off silence in prod builds by setting it to '1'.
+function dbg(...args: unknown[]): void {
+  if (typeof window === 'undefined') return
+  const flag = window.localStorage?.getItem('listal:social-debug')
+  const isDev = import.meta.env.DEV
+  if (flag === '0') return
+  if (flag === '1' || isDev) console.log('[social]', ...args)
+}
+
 // What we broadcast to friends so they can see "now playing" and so the
 // listen-along guest knows what to resolve and where to seek to.
 export interface NowPlayingTrack {
@@ -28,79 +39,123 @@ interface FriendState {
 interface SocialState {
   meId: string | null
   hostChannel: RealtimeChannel | null
+  hostSubscribed: boolean
   // userId -> their channel subscription
   subs: Record<string, RealtimeChannel>
   friendStates: Record<string, FriendState>
   // The state we most recently broadcast, used to skip duplicates.
   lastPublished: NowPlayingState | null
+  // Set by listenAlong.follow so player's own publishSocial calls no-op
+  // while we're syncing to somebody else — avoids the feedback loop.
+  suppressPublish: boolean
 
   start: (meId: string) => void
   stop: () => Promise<void>
   setFriendIds: (ids: string[]) => void
   publish: (state: NowPlayingState) => void
+  setSuppressPublish: (v: boolean) => void
 }
 
 function channelName(userId: string): string {
   return `np:${userId}`
 }
 
-// Presence tracks a payload per "key" — Supabase uses the joining socket id as
-// the key by default. We only care about the most recent state from the host,
-// so we pluck the first entry on every sync.
+// Presence entries can pile up when a client reconnects (each join is a new
+// entry under the same key until the old one expires). We pick the newest by
+// looking at the payload's own `ts` — the host stamps every state with the
+// wall-clock at capture. Falls back to array order if `ts` is missing.
 function pickHostState(presenceState: Record<string, unknown[]>): NowPlayingState | null {
+  let best: NowPlayingState | null = null
   for (const entries of Object.values(presenceState)) {
-    if (entries.length > 0) {
-      const e = entries[0] as { state?: NowPlayingState }
-      if (e?.state) return e.state
+    for (const raw of entries) {
+      const e = raw as { state?: NowPlayingState }
+      if (!e?.state) continue
+      if (!best || (e.state.ts ?? 0) > (best.ts ?? 0)) best = e.state
     }
   }
-  return null
+  return best
 }
 
-export const useSocial = create<SocialState>((set, get) => ({
+// Expose the store to the DevTools console so you can inspect it:
+//   window.__listal.social.getState()
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
+  ;(window as unknown as { __listal?: Record<string, unknown> }).__listal ??= {}
+}
+
+const useSocialImpl = create<SocialState>((set, get) => ({
   meId: null,
   hostChannel: null,
+  hostSubscribed: false,
   subs: {},
   friendStates: {},
   lastPublished: null,
+  suppressPublish: false,
+
+  setSuppressPublish: (v) => set({ suppressPublish: v }),
 
   start: (meId) => {
     const existing = get().hostChannel
     if (existing && get().meId === meId) return
-    if (existing) void existing.unsubscribe()
+    if (existing) {
+      void existing.untrack().catch(() => {})
+      void existing.unsubscribe()
+    }
 
+    dbg('start host channel', meId)
     // The host channel: we join our own np:<meId> and track our state.
-    // Friends who subscribe to the same channel see presence sync events.
-    // We don't pin a presence key — Supabase auto-assigns a UUID per join,
-    // and we only ever read entries that carry a `state` payload, so any
-    // empty entries from listeners are ignored.
-    const ch = supabase.channel(channelName(meId))
+    // Friends subscribed to the same channel see presence sync events.
+    const ch = supabase.channel(channelName(meId), {
+      config: { presence: { key: meId } }
+    })
     ch.subscribe((status) => {
+      dbg('host status', status)
       if (status === 'SUBSCRIBED') {
-        // Send an initial empty state so friends know I'm online but idle.
+        set({ hostSubscribed: true })
+        // Re-broadcast whatever we last knew so listeners that joined while we
+        // were still subscribing pick up the latest state.
         const last = get().lastPublished
-        void ch.track({
-          state:
-            last ?? {
-              track: null,
-              positionSec: 0,
-              isPlaying: false,
-              ts: Date.now()
+        const payload =
+          last ?? {
+            track: null,
+            positionSec: 0,
+            isPlaying: false,
+            ts: Date.now()
+          }
+        set({ lastPublished: payload })
+        void ch.track({ state: payload }).then((r) => dbg('track init', r))
+      } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        set({ hostSubscribed: false })
+        // Rejoin — Supabase closes idle presence channels sometimes and drops
+        // us on rate-limit spikes. Without this the app looks fine but never
+        // publishes another update.
+        const currentId = get().meId
+        if (currentId === meId) {
+          dbg('host channel dropped, rejoining in 1.5s', status)
+          setTimeout(() => {
+            const still = get()
+            if (still.meId === meId && still.hostChannel === ch) {
+              set({ hostChannel: null })
+              get().start(meId)
             }
-        })
+          }, 1500)
+        }
       }
     })
 
-    set({ meId, hostChannel: ch })
+    set({ meId, hostChannel: ch, hostSubscribed: false })
   },
 
   stop: async () => {
     const { hostChannel, subs } = get()
-    if (hostChannel) await hostChannel.unsubscribe()
+    if (hostChannel) {
+      await hostChannel.untrack().catch(() => {})
+      await hostChannel.unsubscribe()
+    }
     for (const c of Object.values(subs)) await c.unsubscribe()
     set({
       meId: null,
       hostChannel: null,
+      hostSubscribed: false,
       subs: {},
       friendStates: {},
       lastPublished: null
@@ -112,6 +167,7 @@ export const useSocial = create<SocialState>((set, get) => ({
     if (!meId) return
     const want = new Set(ids.filter((id) => id !== meId))
     const current = new Set(Object.keys(subs))
+    dbg('setFriendIds', { want: [...want], current: [...current] })
 
     const nextSubs = { ...subs }
     const nextStates = { ...get().friendStates }
@@ -131,6 +187,7 @@ export const useSocial = create<SocialState>((set, get) => ({
       const ch = supabase.channel(channelName(id))
       ch.on('presence', { event: 'sync' }, () => {
         const presence = ch.presenceState() as Record<string, unknown[]>
+        dbg('friend presence sync', id, presence)
         const state = pickHostState(presence)
         const online = Object.keys(presence).length > 0
         set((s) => ({
@@ -140,7 +197,9 @@ export const useSocial = create<SocialState>((set, get) => ({
           }
         }))
       })
-      ch.subscribe()
+      ch.subscribe((status) => {
+        dbg('friend sub status', id, status)
+      })
       nextSubs[id] = ch
       nextStates[id] = nextStates[id] ?? { online: false, state: null }
     }
@@ -149,19 +208,43 @@ export const useSocial = create<SocialState>((set, get) => ({
   },
 
   publish: (state) => {
-    const { hostChannel, lastPublished } = get()
-    if (!hostChannel) return
-    // Skip if nothing meaningful changed (same source/playing flag and <2s drift).
-    if (
-      lastPublished &&
-      lastPublished.track?.sourceUrl === state.track?.sourceUrl &&
-      lastPublished.isPlaying === state.isPlaying &&
-      Math.abs(lastPublished.positionSec - state.positionSec) < 1.5 &&
-      state.ts - lastPublished.ts < 1500
-    ) {
+    const { hostChannel, hostSubscribed, lastPublished } = get()
+    // Hard throttle: important transitions (track change, play/pause flip) go
+    // through immediately; everything else obeys a 1.5s minimum spacing. This
+    // is what stops the "listen-along seek loop" from DoSing our own channel
+    // and getting us kicked by Supabase.
+    const trackChanged = lastPublished?.track?.sourceUrl !== state.track?.sourceUrl
+    const playFlipped = !lastPublished || lastPublished.isPlaying !== state.isPlaying
+    const important = trackChanged || playFlipped
+    if (!important && lastPublished && state.ts - lastPublished.ts < 1500) {
       return
     }
+    if (!hostChannel) {
+      dbg('publish skipped: no channel')
+      return
+    }
+    dbg('publish called', {
+      hasChannel: !!hostChannel,
+      hostSubscribed,
+      track: state.track?.title ?? null,
+      playing: state.isPlaying,
+      pos: state.positionSec,
+      important
+    })
     set({ lastPublished: state })
-    void hostChannel.track({ state })
+    if (!hostSubscribed) {
+      // Channel will replay lastPublished once SUBSCRIBED fires. Don't track
+      // now — pre-SUBSCRIBED tracks silently drop on the floor.
+      dbg('publish queued (not yet subscribed)', state)
+      return
+    }
+    void hostChannel.track({ state }).then((r) => dbg('track ack', r))
   }
 }))
+
+export const useSocial = useSocialImpl
+
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
+  const w = window as unknown as { __listal?: Record<string, unknown> }
+  ;(w.__listal ??= {}).social = useSocialImpl
+}

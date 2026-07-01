@@ -180,7 +180,7 @@ function TreeGroup({
     <div>
       <button
         onClick={onToggle}
-        className="flex w-full items-center gap-1 bg-[linear-gradient(#f0f0f0,#e6e6e6)] px-1.5 py-0.5 text-left font-semibold uppercase text-[10.5px] tracking-wider text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+        className="flex w-full items-center gap-1 bg-[var(--grad-header)] px-1.5 py-0.5 text-left font-semibold uppercase text-[10.5px] tracking-wider text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
       >
         {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
         <span className="flex-1">{label}</span>
