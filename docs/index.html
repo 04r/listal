@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Listal — one library for every service</title>
+    <meta
+      name="description"
+      content="Listal is a Windows music player that pulls YouTube, SoundCloud, and Bandcamp into a single library. Playlists that mix any source. Listen along with friends. Discord Rich Presence."
+    />
+    <link rel="icon" href="listal.png" />
+    <meta property="og:title" content="Listal" />
+    <meta
+      property="og:description"
+      content="One library for every music service. Cross-service playlists, listen-along, Discord RPC."
+    />
+    <meta property="og:image" content="listal.png" />
+    <style>
+      :root {
+        --bg: #ececec;
+        --panel: #f4f4f4;
+        --panel-2: #e6e6e6;
+        --panel-3: #f0f0f0;
+        --border: #c8c8c8;
+        --border-strong: #a0a0a0;
+        --text: #1a1a1a;
+        --text-muted: #6a6a6a;
+        --text-dim: #8a8a8a;
+        --link: #0645ad;
+        --row-current: #316ac5;
+        --danger: #b00020;
+        --font: "Segoe UI", Tahoma, "Trebuchet MS", sans-serif;
+        --grad-btn: linear-gradient(#ffffff, #dcdcdc);
+        --grad-btn-hover: linear-gradient(#ffffff, #cccccc);
+        --grad-header: linear-gradient(#f0f0f0, #e6e6e6);
+        --grad-titlebar: linear-gradient(#e6e6e6, #d6d6d6);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 12.5px;
+        line-height: 1.5;
+      }
+      a {
+        color: var(--link);
+        text-decoration: underline;
+      }
+      a:hover {
+        text-decoration: none;
+      }
+      /* ---- page top bar (fake app title bar) ---- */
+      .titlebar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 28px;
+        padding: 0 8px;
+        background: var(--grad-titlebar);
+        border-bottom: 1px solid var(--border);
+        font-size: 11.5px;
+      }
+      .titlebar img {
+        width: 14px;
+        height: 14px;
+        object-fit: contain;
+      }
+      .titlebar .name {
+        font-weight: 600;
+        letter-spacing: 0.2px;
+      }
+      .titlebar nav {
+        margin-left: auto;
+        display: flex;
+        gap: 2px;
+      }
+      .titlebar nav a {
+        color: var(--text);
+        text-decoration: none;
+        padding: 3px 8px;
+        border: 1px solid transparent;
+      }
+      .titlebar nav a:hover {
+        border: 1px solid var(--border);
+        background: var(--panel);
+      }
+      /* ---- shell wrapper ---- */
+      .wrap {
+        max-width: 1080px;
+        margin: 20px auto 40px;
+        padding: 0 14px;
+      }
+      /* ---- generic panel (matches app's sidebar + list panels) ---- */
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+      }
+      .panel > .head {
+        background: var(--grad-header);
+        border-bottom: 1px solid var(--border);
+        padding: 5px 10px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--text-muted);
+      }
+      .panel > .body {
+        padding: 12px 14px;
+      }
+      /* ---- button (matches app's gradient buttons) ---- */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border: 1px solid var(--border-strong);
+        background: var(--grad-btn);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 12px;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .btn:hover {
+        background: var(--grad-btn-hover);
+      }
+      .btn.primary {
+        background: linear-gradient(#5a8ee0, #2f60b8);
+        border-color: #1e4a94;
+        color: #fff;
+        font-weight: 600;
+      }
+      .btn.primary:hover {
+        background: linear-gradient(#6a9eee, #3f70c8);
+      }
+      /* ---- hero ---- */
+      .hero {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        align-items: stretch;
+      }
+      .hero-left {
+        padding: 22px 22px 20px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+      }
+      .hero h1 {
+        margin: 0 0 8px;
+        font-size: 34px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      .hero .tagline {
+        margin: 0 0 14px;
+        font-size: 15px;
+        color: var(--text);
+      }
+      .hero .lede {
+        margin: 0 0 18px;
+        color: var(--text-muted);
+        font-size: 12.5px;
+        max-width: 46ch;
+      }
+      .hero .cta {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .hero .meta {
+        margin-top: 18px;
+        color: var(--text-dim);
+        font-size: 11px;
+      }
+      .hero-right {
+        padding: 0;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .fake-titlebar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        background: var(--grad-titlebar);
+        border-bottom: 1px solid var(--border);
+        font-size: 11px;
+      }
+      .fake-titlebar img {
+        width: 12px;
+        height: 12px;
+      }
+      .fake-titlebar .win-btns {
+        margin-left: auto;
+        display: flex;
+        gap: 4px;
+      }
+      .fake-titlebar .win-btns span {
+        width: 14px;
+        height: 14px;
+        border: 1px solid var(--border-strong);
+        background: var(--grad-btn);
+        display: inline-block;
+      }
+      .hero-right img.shot {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-top: 1px solid var(--border);
+      }
+      /* ---- section title strip ---- */
+      .section-strip {
+        margin: 24px 0 12px;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        background: var(--grad-header);
+        font-size: 10.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--text-muted);
+      }
+      /* ---- features table (mimics track list) ---- */
+      table.features {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        font-size: 12.5px;
+      }
+      table.features thead th {
+        background: var(--grad-header);
+        border-bottom: 1px solid var(--border);
+        padding: 6px 10px;
+        text-align: left;
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--text-muted);
+      }
+      table.features tbody td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #e0e0e0;
+        vertical-align: top;
+      }
+      table.features tbody tr:last-child td {
+        border-bottom: none;
+      }
+      table.features tbody tr:hover {
+        background: #f7f7f7;
+      }
+      table.features td.num {
+        width: 30px;
+        color: var(--text-dim);
+        font-variant-numeric: tabular-nums;
+      }
+      table.features td.name {
+        width: 180px;
+        font-weight: 600;
+      }
+      table.features td.desc {
+        color: var(--text-muted);
+      }
+      /* ---- services grid ---- */
+      .services {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+      }
+      .service {
+        padding: 14px 12px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        text-align: center;
+      }
+      .service .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        border: 1px solid var(--border-strong);
+        background: var(--grad-btn);
+        color: var(--text);
+        margin-bottom: 8px;
+      }
+      .service h4 {
+        margin: 0 0 4px;
+        font-size: 13px;
+      }
+      .service p {
+        margin: 0;
+        font-size: 11.5px;
+        color: var(--text-muted);
+      }
+      /* ---- how it works ---- */
+      .how {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+      .how .step {
+        padding: 12px 14px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+      }
+      .how .step .n {
+        display: inline-block;
+        min-width: 22px;
+        padding: 1px 6px;
+        border: 1px solid var(--border-strong);
+        background: var(--grad-btn);
+        font-size: 11px;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+      .how .step h4 {
+        margin: 0 0 4px;
+        font-size: 13px;
+      }
+      .how .step p {
+        margin: 0;
+        font-size: 11.5px;
+        color: var(--text-muted);
+      }
+      /* ---- final CTA ---- */
+      .final {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 20px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+      }
+      .final .txt h3 {
+        margin: 0 0 4px;
+        font-size: 16px;
+      }
+      .final .txt p {
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+      .final .btns {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      /* ---- statusbar ---- */
+      .statusbar {
+        margin-top: 20px;
+        padding: 4px 10px;
+        border: 1px solid var(--border);
+        background: var(--grad-header);
+        font-size: 10.5px;
+        color: var(--text-muted);
+        display: flex;
+        justify-content: space-between;
+      }
+      /* ---- kbd tag ---- */
+      kbd {
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 11px;
+        padding: 1px 5px;
+        border: 1px solid var(--border-strong);
+        background: var(--grad-btn);
+        color: var(--text);
+      }
+      /* ---- responsive ---- */
+      @media (max-width: 820px) {
+        .hero {
+          grid-template-columns: 1fr;
+        }
+        .services {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .how {
+          grid-template-columns: 1fr;
+        }
+        .final {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="titlebar">
+      <img src="listal.png" alt="" />
+      <span class="name">Listal</span>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#services">Services</a>
+        <a href="#how">How it works</a>
+        <a href="https://github.com/04r/listal">GitHub</a>
+      </nav>
+    </div>
+
+    <main class="wrap">
+      <!-- ---- hero ---- -->
+      <section class="hero">
+        <div class="hero-left">
+          <h1>Listal</h1>
+          <p class="tagline">One library. Every service. No juggling apps.</p>
+          <p class="lede">
+            A Windows music player that pulls YouTube, SoundCloud, and Bandcamp into a single
+            library. Build playlists that mix any source. Listen along with friends in real
+            time. Discord Rich Presence shows what you're playing, from wherever you're playing
+            it.
+          </p>
+          <div class="cta">
+            <a class="btn primary" href="https://github.com/04r/listal/releases">Download</a>
+            <a class="btn" href="https://github.com/04r/listal">View on GitHub</a>
+          </div>
+          <div class="meta">
+            Windows · Free · Open source · Personal-use tool
+          </div>
+        </div>
+
+        <div class="hero-right">
+          <div class="fake-titlebar">
+            <img src="listal.png" alt="" />
+            <span>Listal</span>
+            <div class="win-btns">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+          <img class="shot" src="screenshot.png" alt="Listal library view" />
+        </div>
+      </section>
+
+      <!-- ---- features (table styled like the track list) ---- -->
+      <div class="section-strip">Features · 6 items</div>
+      <table class="features" id="features">
+        <thead>
+          <tr>
+            <th style="width:30px">#</th>
+            <th style="width:180px">Feature</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="num">1</td>
+            <td class="name">Unified library</td>
+            <td class="desc">
+              One list, one search bar, one playlist grid. Mix a YouTube track, a SoundCloud
+              upload and a Bandcamp release in the same playlist and just hit play.
+            </td>
+          </tr>
+          <tr>
+            <td class="num">2</td>
+            <td class="name">Paste to import</td>
+            <td class="desc">
+              Drop any track or playlist URL into the search bar. Listal resolves the metadata,
+              caches artwork, and adds it to your library.
+            </td>
+          </tr>
+          <tr>
+            <td class="num">3</td>
+            <td class="name">Listen along with friends</td>
+            <td class="desc">
+              Add a friend by @username, hit the Radio button on their row, and hear what
+              they're playing in sync. Auto-loads their next track.
+            </td>
+          </tr>
+          <tr>
+            <td class="num">4</td>
+            <td class="name">Discord Rich Presence</td>
+            <td class="desc">
+              Shows title, artist, duration and time remaining. Includes a "Listen on YouTube"
+              button that deep-links to the source.
+            </td>
+          </tr>
+          <tr>
+            <td class="num">5</td>
+            <td class="name">Windows media keys</td>
+            <td class="desc">
+              Play/pause and skip keys on your keyboard work everywhere — no need to focus the
+              window. SMTC popup shows title and artwork.
+            </td>
+          </tr>
+          <tr>
+            <td class="num">6</td>
+            <td class="name">Best-available audio</td>
+            <td class="desc">
+              Prefers Opus at the highest bitrate the service exposes, so YouTube tracks don't
+              sound like a 128 kbps AAC.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- ---- services ---- -->
+      <div class="section-strip" id="services">Sources supported</div>
+      <div class="services">
+        <div class="service">
+          <span class="badge">YouTube</span>
+          <h4>Search + paste</h4>
+          <p>Search the whole catalog or paste a video, playlist or channel URL.</p>
+        </div>
+        <div class="service">
+          <span class="badge">SoundCloud</span>
+          <h4>Paste to import</h4>
+          <p>Tracks and playlists from soundcloud.com resolve straight into your library.</p>
+        </div>
+        <div class="service">
+          <span class="badge">Bandcamp</span>
+          <h4>Paste to import</h4>
+          <p>Album pages, single tracks, and artist discographies.</p>
+        </div>
+        <div class="service">
+          <span class="badge">Spotify</span>
+          <h4>Metadata bridge</h4>
+          <p>Paste a Spotify playlist — Listal resolves each track to a YouTube source.</p>
+        </div>
+      </div>
+
+      <!-- ---- how it works ---- -->
+      <div class="section-strip" id="how">How it works</div>
+      <div class="how">
+        <div class="step">
+          <span class="n">01</span>
+          <h4>Paste or search</h4>
+          <p>
+            Drop a URL into the search bar or search across services. Listal resolves the
+            metadata locally.
+          </p>
+        </div>
+        <div class="step">
+          <span class="n">02</span>
+          <h4>Build a playlist</h4>
+          <p>
+            Add tracks to any playlist. Mix services freely — a playlist can be YouTube +
+            SoundCloud + Bandcamp side by side.
+          </p>
+        </div>
+        <div class="step">
+          <span class="n">03</span>
+          <h4>Just play</h4>
+          <p>
+            Audio streams direct from the source at the best available bitrate. No downloads,
+            no accounts required (except Spotify metadata).
+          </p>
+        </div>
+      </div>
+
+      <!-- ---- final CTA ---- -->
+      <div class="section-strip">Get it</div>
+      <div class="final">
+        <div class="txt">
+          <h3>Ship it to your Windows box</h3>
+          <p>Grab the latest installer from Releases, or clone and run <kbd>npm run dev</kbd>.</p>
+        </div>
+        <div class="btns">
+          <a class="btn primary" href="https://github.com/04r/listal/releases">Download</a>
+          <a class="btn" href="https://github.com/04r/listal">Source on GitHub</a>
+          <a class="btn" href="https://github.com/04r/listal/issues">Report a bug</a>
+        </div>
+      </div>
+
+      <div class="statusbar">
+        <span>Ready</span>
+        <span>listal.app · <a href="https://github.com/04r/listal">github.com/04r/listal</a></span>
+      </div>
+    </main>
+  </body>
+</html>
