@@ -19,6 +19,7 @@ import {
 import { usePlayer } from '../stores/player'
 import { useConvoy } from '../stores/convoy'
 import { useSettings, type ToolbarSlot, type Zone } from '../stores/settings'
+import { CompactVisualizer } from './CompactVisualizer'
 
 export interface TransportZoneProps {
   zone: Zone
@@ -198,6 +199,7 @@ function useSlotContent(props: TransportZoneProps): Record<ToolbarSlot, React.Re
   const canPlay = index >= 0 && index < queue.length
   const hasNext = index >= 0 && index + 1 < queue.length
   const hasPrev = index > 0
+  const compactVisualizer = useSettings((s) => s.compactVisualizer)
 
   const flow = vertical ? 'flex flex-col gap-1' : 'flex items-center gap-1'
   const btn =
@@ -317,6 +319,7 @@ function useSlotContent(props: TransportZoneProps): Record<ToolbarSlot, React.Re
           onChange={(e) => seekTo(Number(e.target.value))}
           className="flex-1"
         />
+        {compactVisualizer && <CompactVisualizer />}
         <span className="w-9 text-[11px] tabular-nums text-[var(--color-text-muted)]">
           {fmt(durationSec)}
         </span>

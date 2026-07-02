@@ -17,6 +17,7 @@ import { useSocial } from '../stores/social'
 import { useListenAlong } from '../stores/listenAlong'
 import { useChat } from '../stores/chat'
 import { PanelShell } from './PanelShell'
+import { AvatarRing, type PresenceStatus } from './AvatarRing'
 
 interface Props {
   onClose: () => void
@@ -155,11 +156,12 @@ export function FriendsPanel({ onClose }: Props): React.JSX.Element {
                   const fs = friendStates[e.profile.id]
                   const playing = fs?.state?.track
                   const following = followingId === e.profile.id
+                  const status = presenceFromState(!!fs?.online, fs?.state?.presenceMode)
                   return (
                     <FriendRow
                       key={e.profile.id}
                       profile={e.profile}
-                      online={!!fs?.online}
+                      status={status}
                       nowPlayingTitle={playing?.title ?? null}
                       nowPlayingArtist={playing?.artist ?? null}
                       isPlaying={!!fs?.state?.isPlaying}
@@ -181,6 +183,15 @@ export function FriendsPanel({ onClose }: Props): React.JSX.Element {
       )}
     </PanelShell>
   )
+}
+
+function presenceFromState(
+  online: boolean,
+  mode: 'online' | 'idle' | 'busy' | 'invisible' | undefined
+): PresenceStatus {
+  if (!online) return 'offline'
+  if (mode === 'idle' || mode === 'busy' || mode === 'invisible') return mode
+  return 'online'
 }
 
 function Section({
@@ -222,7 +233,7 @@ function Row({
 
 function FriendRow({
   profile,
-  online,
+  status,
   nowPlayingTitle,
   nowPlayingArtist,
   isPlaying,
@@ -233,7 +244,7 @@ function FriendRow({
   onRemove
 }: {
   profile: Profile
-  online: boolean
+  status: PresenceStatus
   nowPlayingTitle: string | null
   nowPlayingArtist: string | null
   isPlaying: boolean
@@ -245,33 +256,20 @@ function FriendRow({
 }): React.JSX.Element {
   return (
     <div className="flex flex-col border-b border-[var(--color-border)]/40 px-2 py-1 hover:bg-[var(--color-surface-3)]">
-      <div className="flex h-5 items-center gap-2">
-        {profile.avatar_url ? (
-          <img
-            src={profile.avatar_url}
-            alt=""
-            className="h-4 w-4 rounded-full border border-[var(--color-border)] object-cover"
-          />
-        ) : (
-          <span
-            className="inline-block h-2 w-2 rounded-full"
-            style={{ background: online ? '#39b54a' : '#bdbdbd' }}
-            title={online ? 'online' : 'offline'}
-          />
-        )}
+      <div className="flex items-center gap-2">
+        <AvatarRing
+          src={profile.avatar_url}
+          size={18}
+          status={status}
+          fallbackChar={profile.username}
+          title={status}
+        />
         <span className="truncate text-[12px] font-medium text-[var(--color-text)]">
           {profile.display_name ?? profile.username}
         </span>
         <span className="truncate text-[10px] text-[var(--color-text-dim)]">
           @{profile.username}
         </span>
-        {profile.avatar_url && (
-          <span
-            className="inline-block h-2 w-2 rounded-full"
-            style={{ background: online ? '#39b54a' : '#bdbdbd' }}
-            title={online ? 'online' : 'offline'}
-          />
-        )}
         <div className="ml-auto flex items-center gap-1">
           <button
             onClick={onChat}

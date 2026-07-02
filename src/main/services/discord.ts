@@ -24,6 +24,10 @@ export interface PresenceInput {
   capturedAtMs: number
   // Optional source URL so we can show a "Listen on YouTube" button.
   sourceUrl?: string | null
+  // User-customisable templates. Tokens: {title} {artist} {service}. When
+  // absent we fall back to the defaults below.
+  detailsTemplate?: string
+  stateTemplate?: string
 }
 
 function scheduleRetry(): void {
@@ -65,18 +69,29 @@ function applyActivity(p: PresenceInput): void {
   // Discord activity types: 0 Playing, 2 Listening, 3 Watching, 5 Competing.
   // The library's types don't yet expose `type` so we cast.
   const artistOrSvc = p.artist || serviceLabel(p.service)
-  // When paused, encode position/duration into the state text so Discord still
-  // shows useful info (Discord clears its own timer when timestamps aren't set).
-  let state = clip(artistOrSvc, 128)
+  const tokens: Record<string, string> = {
+    title: p.title || 'Music',
+    artist: artistOrSvc,
+    service: serviceLabel(p.service)
+  }
+  const detailsTpl = p.detailsTemplate?.trim() || '🎧 {title}'
+  const stateTpl = p.stateTemplate?.trim() || '{artist}'
+  const detailsText = clip(fillTemplate(detailsTpl, tokens), 128) || 'Music'
+  // When paused, append a "paused" hint after the state so users still see the
+  // song info they configured, but know it isn't playing.
+  let state = clip(fillTemplate(stateTpl, tokens), 128) || artistOrSvc
   if (!p.isPlaying && p.durationSec && p.durationSec > 0) {
-    state = clip(`${artistOrSvc} · paused ${fmtTime(p.positionSec)} / ${fmtTime(p.durationSec)}`, 128)
+    state = clip(
+      `${state} · paused ${fmtTime(p.positionSec)} / ${fmtTime(p.durationSec)}`,
+      128
+    )
   } else if (!p.isPlaying) {
-    state = clip(`${artistOrSvc} · paused`, 128)
+    state = clip(`${state} · paused`, 128)
   }
 
   const activity: Record<string, unknown> = {
     type: 2,
-    details: clip(p.title, 128) || 'Music',
+    details: detailsText,
     state,
     largeImageKey: 'listal',
     largeImageText: p.durationSec ? `Listal · ${fmtTime(p.durationSec)}` : 'Listal',
@@ -155,6 +170,10 @@ export function setEnabled(v: boolean): void {
 function clip(s: string | null | undefined, n: number): string {
   if (!s) return ''
   return s.length > n ? s.slice(0, n - 1) + '…' : s
+}
+
+function fillTemplate(tpl: string, tokens: Record<string, string>): string {
+  return tpl.replace(/\{(title|artist|service)\}/g, (_, k) => tokens[k] ?? '')
 }
 
 function serviceLabel(service: string): string {

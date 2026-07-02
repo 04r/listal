@@ -4,6 +4,7 @@ import type { Track } from '../../../preload'
 import { useSocial, type NowPlayingTrack } from './social'
 import { useConvoy, queueItemToTrack } from './convoy'
 import { attachAudio } from '../lib/audioGraph'
+import { useSettings } from './settings'
 
 export type RepeatMode = 'off' | 'all' | 'one'
 
@@ -40,12 +41,13 @@ function pickShuffleIndex(len: number, currentIndex: number): number {
   return n
 }
 
-// One <audio> for the whole app. hls.js is attached to it when the stream is
-// HLS (most SoundCloud tracks), otherwise the URL is assigned directly.
-// Howler used to sit here — it can't handle HLS, which meant SoundCloud tracks
-// never played.
+// One primary <audio> plus an optional fading-out ghost of the previous track
+// so we can crossfade between them. hls.js is attached to whichever element
+// needs it.
 let audio: HTMLAudioElement | null = null
 let hls: Hls | null = null
+let ghostAudio: HTMLAudioElement | null = null
+let ghostHls: Hls | null = null
 let rafId: number | null = null
 let preMuteVolume = 0.85
 
@@ -56,6 +58,27 @@ function stopRaf(): void {
 
 function isHlsUrl(url: string): boolean {
   return /\.m3u8(\?|$)/i.test(url)
+}
+
+function killGhost(): void {
+  if (ghostHls) {
+    try {
+      ghostHls.destroy()
+    } catch {
+      /* ignore */
+    }
+    ghostHls = null
+  }
+  if (ghostAudio) {
+    try {
+      ghostAudio.pause()
+      ghostAudio.removeAttribute('src')
+      ghostAudio.load()
+    } catch {
+      /* ignore */
+    }
+    ghostAudio = null
+  }
 }
 
 // Tear down whatever is currently playing without triggering `ended`.
@@ -74,7 +97,45 @@ function killAudio(): void {
     }
     audio = null
   }
+  killGhost()
   stopRaf()
+}
+
+// Move the current primary audio to the ghost slot and start a fade-out.
+// Returns the target volume the new audio should ramp up to.
+function beginCrossfadeOut(durationMs: number): number {
+  const prev = audio
+  const prevHls = hls
+  if (!prev) return 0.85
+  const startVol = prev.volume
+  ghostAudio = prev
+  ghostHls = prevHls
+  audio = null
+  hls = null
+  const t0 = performance.now()
+  const step = (): void => {
+    if (ghostAudio !== prev) return
+    const p = Math.min(1, (performance.now() - t0) / durationMs)
+    prev.volume = Math.max(0, startVol * (1 - p))
+    if (p < 1) requestAnimationFrame(step)
+    else killGhost()
+  }
+  requestAnimationFrame(step)
+  return startVol
+}
+
+// Ramp the newly-attached primary audio from 0 up to `target` over the given
+// duration. Runs alongside the fade-out from beginCrossfadeOut.
+function fadeIn(a: HTMLAudioElement, target: number, durationMs: number): void {
+  a.volume = 0
+  const t0 = performance.now()
+  const step = (): void => {
+    if (audio !== a) return
+    const p = Math.min(1, (performance.now() - t0) / durationMs)
+    a.volume = target * p
+    if (p < 1) requestAnimationFrame(step)
+  }
+  requestAnimationFrame(step)
 }
 
 export const usePlayer = create<PlayerState>((set, get) => {
@@ -92,18 +153,43 @@ export const usePlayer = create<PlayerState>((set, get) => {
       return
     }
 
-    killAudio()
+    // Crossfade: if the currently-playing element is still going and the user
+    // has configured a nonzero fade, park it as the ghost and let it fade out
+    // while the new element fades in. Otherwise tear it down immediately.
+    const settings = useSettings.getState()
+    const crossfadeMs = Math.round(settings.crossfadeSec * 1000)
+    const shouldCrossfade =
+      crossfadeMs > 0 && audio && !audio.paused && audio.currentTime > 0.25
+    let fadeTarget = get().volume
+    if (shouldCrossfade) {
+      killGhost()
+      fadeTarget = beginCrossfadeOut(crossfadeMs)
+    } else {
+      killAudio()
+    }
 
     const a = new Audio()
     a.preload = 'auto'
     a.crossOrigin = 'anonymous'
-    a.volume = get().volume
+    a.volume = shouldCrossfade ? 0 : get().volume
     audio = a
     try {
       attachAudio(a)
     } catch (e) {
       console.warn('[player] failed to attach audio graph', e)
     }
+    // Route to the selected output device (setSinkId is Chromium-only but
+    // that's fine — Electron is Chromium).
+    const sink = settings.audioOutputDeviceId
+    if (sink) {
+      const anyA = a as HTMLAudioElement & {
+        setSinkId?: (id: string) => Promise<void>
+      }
+      anyA.setSinkId?.(sink).catch((e) => {
+        console.warn('[player] setSinkId failed', e)
+      })
+    }
+    if (shouldCrossfade) fadeIn(a, fadeTarget, crossfadeMs)
 
     a.addEventListener('loadedmetadata', () => {
       if (Number.isFinite(a.duration)) set({ durationSec: a.duration })
@@ -343,6 +429,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
 
 function pushDiscord(track: Track, positionSec: number, isPlaying: boolean): void {
   // Best-effort fire-and-forget. Discord may not be running.
+  const s = useSettings.getState()
   window.api
     .setDiscordPresence({
       title: track.title,
@@ -351,7 +438,9 @@ function pushDiscord(track: Track, positionSec: number, isPlaying: boolean): voi
       durationSec: track.durationMs ? track.durationMs / 1000 : null,
       positionSec,
       isPlaying,
-      sourceUrl: track.sourceUrl
+      sourceUrl: track.sourceUrl,
+      detailsTemplate: s.discordDetailsTemplate,
+      stateTemplate: s.discordStateTemplate
     })
     .catch(() => {})
 }

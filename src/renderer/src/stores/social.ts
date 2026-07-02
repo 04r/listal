@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { useSettings } from './settings'
 
 // Dev builds always log. Opt out in DevTools via:
 //   localStorage.setItem('listal:social-debug', '0')
@@ -29,6 +30,7 @@ export interface NowPlayingState {
   positionSec: number
   isPlaying: boolean
   ts: number // host wall-clock when sampled, ms since epoch
+  presenceMode?: 'online' | 'idle' | 'busy' | 'invisible'
 }
 
 interface FriendState {
@@ -209,40 +211,65 @@ const useSocialImpl = create<SocialState>((set, get) => ({
 
   publish: (state) => {
     const { hostChannel, hostSubscribed, lastPublished } = get()
-    // Hard throttle: important transitions (track change, play/pause flip) go
-    // through immediately; everything else obeys a 1.5s minimum spacing. This
-    // is what stops the "listen-along seek loop" from DoSing our own channel
-    // and getting us kicked by Supabase.
-    const trackChanged = lastPublished?.track?.sourceUrl !== state.track?.sourceUrl
-    const playFlipped = !lastPublished || lastPublished.isPlaying !== state.isPlaying
-    const important = trackChanged || playFlipped
-    if (!important && lastPublished && state.ts - lastPublished.ts < 1500) {
+    const settings = useSettings.getState()
+    // Invisible mode: untrack entirely so we don't appear online anywhere.
+    if (settings.presenceMode === 'invisible') {
+      if (hostChannel) void hostChannel.untrack().catch(() => {})
+      set({ lastPublished: null })
+      return
+    }
+    // Attach the current mode + hide-now-playing preference. Friends read
+    // these off the payload to render the right status.
+    const outgoing: NowPlayingState = {
+      ...state,
+      track: settings.hideNowPlaying ? null : state.track,
+      presenceMode: settings.presenceMode
+    }
+    const trackChanged = lastPublished?.track?.sourceUrl !== outgoing.track?.sourceUrl
+    const playFlipped = !lastPublished || lastPublished.isPlaying !== outgoing.isPlaying
+    const modeChanged = lastPublished?.presenceMode !== outgoing.presenceMode
+    const important = trackChanged || playFlipped || modeChanged
+    if (!important && lastPublished && outgoing.ts - lastPublished.ts < 1500) {
       return
     }
     if (!hostChannel) {
       dbg('publish skipped: no channel')
       return
     }
-    dbg('publish called', {
-      hasChannel: !!hostChannel,
-      hostSubscribed,
-      track: state.track?.title ?? null,
-      playing: state.isPlaying,
-      pos: state.positionSec,
-      important
-    })
-    set({ lastPublished: state })
+    set({ lastPublished: outgoing })
     if (!hostSubscribed) {
-      // Channel will replay lastPublished once SUBSCRIBED fires. Don't track
-      // now — pre-SUBSCRIBED tracks silently drop on the floor.
-      dbg('publish queued (not yet subscribed)', state)
+      dbg('publish queued (not yet subscribed)', outgoing)
       return
     }
-    void hostChannel.track({ state }).then((r) => dbg('track ack', r))
+    void hostChannel.track({ state: outgoing }).then((r) => dbg('track ack', r))
   }
 }))
 
 export const useSocial = useSocialImpl
+
+// React to presence-mode / hide-now-playing changes: republish immediately so
+// friends see the switch without waiting for the next tick.
+if (typeof window !== 'undefined') {
+  let lastMode = useSettings.getState().presenceMode
+  let lastHide = useSettings.getState().hideNowPlaying
+  useSettings.subscribe((s) => {
+    if (s.presenceMode !== lastMode || s.hideNowPlaying !== lastHide) {
+      lastMode = s.presenceMode
+      lastHide = s.hideNowPlaying
+      const last = useSocialImpl.getState().lastPublished
+      if (last) {
+        useSocialImpl.getState().publish({ ...last, ts: Date.now() })
+      } else if (useSocialImpl.getState().hostChannel) {
+        useSocialImpl.getState().publish({
+          track: null,
+          positionSec: 0,
+          isPlaying: false,
+          ts: Date.now()
+        })
+      }
+    }
+  })
+}
 
 if (typeof window !== 'undefined' && import.meta.env.DEV) {
   const w = window as unknown as { __listal?: Record<string, unknown> }

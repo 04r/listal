@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Search, X } from 'lucide-react'
+import { Search, X, Circle } from 'lucide-react'
 import { usePlayer } from '../stores/player'
 import { useLibrary } from '../stores/library'
 import { useAuth } from '../stores/auth'
+import { useSettings } from '../stores/settings'
 import { TransportZone } from './TransportZone'
 import { TabBar } from './TabBar'
+import { AvatarRing, presenceColor } from './AvatarRing'
 
 interface ToolbarProps {
   lyricsOpen: boolean
@@ -294,24 +296,12 @@ function Menubar({ onOpenAuth }: { onOpenAuth: () => void }): React.JSX.Element 
         {initializing ? (
           <span className="text-[var(--color-text-dim)]">…</span>
         ) : profile ? (
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent('listal:open-profile'))}
-            title="Edit profile"
-            className="flex items-center gap-1.5 hover:underline"
-          >
-            {profile.avatar_url ? (
-              <img
-                src={profile.avatar_url}
-                alt=""
-                className="h-4 w-4 rounded-full border border-[var(--color-border)] object-cover"
-              />
-            ) : (
-              <span className="grid h-4 w-4 place-items-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[9px] font-semibold text-[var(--color-text-muted)]">
-                {profile.username.slice(0, 1).toUpperCase()}
-              </span>
-            )}
-            @{profile.username}
-          </button>
+          <ProfileDropdown
+            open={openMenu === '__profile__'}
+            onOpen={() => setOpenMenu('__profile__')}
+            onClose={() => setOpenMenu(null)}
+            onSignOut={() => void signOut()}
+          />
         ) : (
           <button onClick={onOpenAuth} className="text-[var(--color-link)] hover:underline">
             Sign in
@@ -332,6 +322,156 @@ type MenuItem =
     }
   | { type: 'separator' }
   | { type: 'submenu'; label: string; items: MenuItem[] }
+
+function ProfileDropdown({
+  open,
+  onOpen,
+  onClose,
+  onSignOut
+}: {
+  open: boolean
+  onOpen: () => void
+  onClose: () => void
+  onSignOut: () => void
+}): React.JSX.Element | null {
+  const profile = useAuth((s) => s.profile)
+  const presenceMode = useSettings((s) => s.presenceMode)
+  const setPresenceMode = useSettings((s) => s.setPresenceMode)
+  const hideNowPlaying = useSettings((s) => s.hideNowPlaying)
+  const setHideNowPlaying = useSettings((s) => s.setHideNowPlaying)
+  const rootRef = useRef<HTMLSpanElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDocDown = (e: MouseEvent): void => {
+      const el = rootRef.current
+      if (!el) return
+      if (!el.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', onDocDown)
+    return () => document.removeEventListener('mousedown', onDocDown)
+  }, [open, onClose])
+
+  if (!profile) return null
+
+  const displayStatus = presenceMode === 'invisible' ? 'offline' : presenceMode
+
+  return (
+    <span ref={rootRef} className="relative">
+      <button
+        onClick={() => (open ? onClose() : onOpen())}
+        className={`flex items-center gap-1.5 px-1.5 py-0.5 hover:bg-[var(--color-surface-3)] ${
+          open ? 'bg-[var(--color-surface-3)]' : ''
+        }`}
+        title="Account"
+      >
+        <AvatarRing
+          src={profile.avatar_url}
+          size={16}
+          status={displayStatus}
+          fallbackChar={profile.username}
+        />
+        <span>@{profile.username}</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-40 min-w-[220px] border border-[var(--color-border-strong)] bg-[var(--color-shell)] py-1 shadow-2xl">
+          <div className="border-b border-[var(--color-border)] px-3 py-2">
+            <div className="flex items-center gap-2">
+              <AvatarRing
+                src={profile.avatar_url}
+                size={22}
+                status={displayStatus}
+                fallbackChar={profile.username}
+              />
+              <div className="min-w-0">
+                <div className="truncate text-[12px] font-semibold text-[var(--color-text)]">
+                  {profile.display_name ?? profile.username}
+                </div>
+                <div className="truncate text-[10.5px] text-[var(--color-text-muted)]">
+                  @{profile.username}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-b border-[var(--color-border)] px-2 py-1 text-[9.5px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+            Status
+          </div>
+          {(['online', 'idle', 'busy', 'invisible'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setPresenceMode(m)}
+              className={`flex w-full items-center gap-2 px-3 py-1 text-left text-[11.5px] hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)] ${
+                presenceMode === m ? 'font-semibold' : ''
+              }`}
+            >
+              <Circle
+                size={9}
+                fill={presenceColor(m === 'invisible' ? 'offline' : m)}
+                stroke="none"
+              />
+              <span>{labelFor(m)}</span>
+              {presenceMode === m && <span className="ml-auto">✓</span>}
+            </button>
+          ))}
+
+          <label className="flex cursor-pointer items-center gap-2 border-t border-[var(--color-border)] px-3 py-1 text-[11.5px] hover:bg-[var(--color-surface-3)]">
+            <input
+              type="checkbox"
+              checked={hideNowPlaying}
+              onChange={(e) => setHideNowPlaying(e.target.checked)}
+              className="h-3 w-3"
+            />
+            <span>Hide now-playing from friends</span>
+          </label>
+
+          <div className="my-1 border-t border-[var(--color-border)]" />
+          <button
+            onClick={() => {
+              onClose()
+              window.dispatchEvent(new CustomEvent('listal:open-profile'))
+            }}
+            className="block w-full px-3 py-1 text-left text-[11.5px] hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
+          >
+            Edit profile…
+          </button>
+          <button
+            onClick={() => {
+              onClose()
+              window.dispatchEvent(new CustomEvent('listal:open-settings'))
+            }}
+            className="block w-full px-3 py-1 text-left text-[11.5px] hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
+          >
+            Settings…
+          </button>
+          <div className="my-1 border-t border-[var(--color-border)]" />
+          <button
+            onClick={() => {
+              onClose()
+              onSignOut()
+            }}
+            className="block w-full px-3 py-1 text-left text-[11.5px] text-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
+          >
+            Sign out
+          </button>
+        </div>
+      )}
+    </span>
+  )
+}
+
+function labelFor(m: 'online' | 'idle' | 'busy' | 'invisible'): string {
+  switch (m) {
+    case 'online':
+      return 'Online'
+    case 'idle':
+      return 'Away'
+    case 'busy':
+      return 'Do not disturb'
+    case 'invisible':
+      return 'Invisible'
+  }
+}
 
 function MenuButton({
   label,

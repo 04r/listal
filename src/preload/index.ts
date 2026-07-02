@@ -95,6 +95,8 @@ const api = {
     positionSec: number
     isPlaying: boolean
     sourceUrl?: string | null
+    detailsTemplate?: string
+    stateTemplate?: string
   }): Promise<void> => ipcRenderer.invoke('discord:set', p),
   clearDiscordPresence: (): Promise<void> => ipcRenderer.invoke('discord:clear'),
   setDiscordEnabled: (v: boolean): Promise<void> => ipcRenderer.invoke('discord:setEnabled', v),

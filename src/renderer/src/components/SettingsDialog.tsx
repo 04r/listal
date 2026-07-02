@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { X, Settings as SettingsIcon, RotateCcw } from 'lucide-react'
 import { useSettings, type PanelKey } from '../stores/settings'
 
@@ -38,7 +38,36 @@ export function SettingsDialog({ onClose }: Props): React.JSX.Element {
   const setZoneContents = useSettings((s) => s.setZoneContents)
   const discordRpc = useSettings((s) => s.discordRpc)
   const setDiscordRpc = useSettings((s) => s.setDiscordRpc)
+  const discordDetailsTemplate = useSettings((s) => s.discordDetailsTemplate)
+  const setDiscordDetailsTemplate = useSettings((s) => s.setDiscordDetailsTemplate)
+  const discordStateTemplate = useSettings((s) => s.discordStateTemplate)
+  const setDiscordStateTemplate = useSettings((s) => s.setDiscordStateTemplate)
+  const crossfadeSec = useSettings((s) => s.crossfadeSec)
+  const setCrossfadeSec = useSettings((s) => s.setCrossfadeSec)
+  const audioOutputDeviceId = useSettings((s) => s.audioOutputDeviceId)
+  const setAudioOutputDeviceId = useSettings((s) => s.setAudioOutputDeviceId)
+  const compactVisualizer = useSettings((s) => s.compactVisualizer)
+  const setCompactVisualizer = useSettings((s) => s.setCompactVisualizer)
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
   const resetAll = useSettings((s) => s.resetAll)
+
+  useEffect(() => {
+    async function loadDevices(): Promise<void> {
+      try {
+        // Some browsers hide device labels until getUserMedia has been called.
+        // Best-effort — we don't need mic access, just labels.
+        await navigator.mediaDevices
+          .getUserMedia({ audio: true })
+          .then((s) => s.getTracks().forEach((t) => t.stop()))
+          .catch(() => {})
+        const list = await navigator.mediaDevices.enumerateDevices()
+        setAudioDevices(list.filter((d) => d.kind === 'audiooutput'))
+      } catch {
+        /* ignore */
+      }
+    }
+    void loadDevices()
+  }, [])
   const [customAccent, setCustomAccent] = useState(accent)
 
   function applyCustomAccent(): void {
@@ -204,6 +233,51 @@ export function SettingsDialog({ onClose }: Props): React.JSX.Element {
           </div>
         </Section>
 
+        {/* Playback */}
+        <Section title="Playback">
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-[12px]">
+              <span className="w-32 shrink-0">Crossfade</span>
+              <input
+                type="range"
+                min={0}
+                max={10}
+                step={0.5}
+                value={crossfadeSec}
+                onChange={(e) => setCrossfadeSec(Number(e.target.value))}
+                className="flex-1"
+              />
+              <span className="w-14 text-right tabular-nums">
+                {crossfadeSec === 0 ? 'off' : `${crossfadeSec}s`}
+              </span>
+            </label>
+            <label className="flex items-center gap-2 text-[12px]">
+              <span className="w-32 shrink-0">Audio output</span>
+              <select
+                value={audioOutputDeviceId}
+                onChange={(e) => setAudioOutputDeviceId(e.target.value)}
+                className="h-6 flex-1 border border-[var(--color-border-strong)] bg-[var(--color-input)] px-1 text-[11.5px]"
+              >
+                <option value="">System default</option>
+                {audioDevices.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label || `Device ${d.deviceId.slice(0, 6)}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-[12px]">
+              <input
+                type="checkbox"
+                checked={compactVisualizer}
+                onChange={(e) => setCompactVisualizer(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              <span>Show mini visualizer next to the timeline</span>
+            </label>
+          </div>
+        </Section>
+
         {/* Integrations */}
         <Section title="Integrations">
           <label className="flex cursor-pointer items-center gap-2 text-[12px]">
@@ -219,6 +293,30 @@ export function SettingsDialog({ onClose }: Props): React.JSX.Element {
             Off means Listal won't send anything to Discord. Discord doesn't
             need to be running either way.
           </div>
+          {discordRpc && (
+            <div className="mt-2 flex flex-col gap-2">
+              <label className="flex items-center gap-2 text-[12px]">
+                <span className="w-32 shrink-0">Title line</span>
+                <input
+                  value={discordDetailsTemplate}
+                  onChange={(e) => setDiscordDetailsTemplate(e.target.value)}
+                  className="h-6 flex-1 border border-[var(--color-border-strong)] bg-[var(--color-input)] px-1.5 text-[11.5px]"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-[12px]">
+                <span className="w-32 shrink-0">Second line</span>
+                <input
+                  value={discordStateTemplate}
+                  onChange={(e) => setDiscordStateTemplate(e.target.value)}
+                  className="h-6 flex-1 border border-[var(--color-border-strong)] bg-[var(--color-input)] px-1.5 text-[11.5px]"
+                />
+              </label>
+              <div className="text-[10.5px] text-[var(--color-text-dim)]">
+                Tokens: <code>{'{title}'}</code>, <code>{'{artist}'}</code>,{' '}
+                <code>{'{service}'}</code>. Example: 🎧 {'{title}'} — {'{artist}'}
+              </div>
+            </div>
+          )}
         </Section>
 
         {/* Reset */}

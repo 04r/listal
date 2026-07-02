@@ -23,6 +23,13 @@ interface Settings {
   zoneContents: Record<Zone, ToolbarSlot[]>
   customizeMode: boolean
   discordRpc: boolean // send now-playing to Discord Rich Presence
+  discordDetailsTemplate: string // top line, tokens: {title} {artist} {service}
+  discordStateTemplate: string // bottom line
+  crossfadeSec: number // 0..10; 0 = disabled
+  audioOutputDeviceId: string // '' = default
+  presenceMode: 'online' | 'idle' | 'busy' | 'invisible'
+  hideNowPlaying: boolean
+  compactVisualizer: boolean // show a small bar-visualizer next to timeline
 }
 
 interface SettingsState extends Settings {
@@ -33,6 +40,13 @@ interface SettingsState extends Settings {
   moveSlot: (slot: ToolbarSlot, toZone: Zone, beforeSlot: ToolbarSlot | null) => void
   setCustomizeMode: (v: boolean) => void
   setDiscordRpc: (v: boolean) => void
+  setDiscordDetailsTemplate: (v: string) => void
+  setDiscordStateTemplate: (v: string) => void
+  setCrossfadeSec: (v: number) => void
+  setAudioOutputDeviceId: (v: string) => void
+  setPresenceMode: (v: Settings['presenceMode']) => void
+  setHideNowPlaying: (v: boolean) => void
+  setCompactVisualizer: (v: boolean) => void
   resetAll: () => void
 }
 
@@ -66,7 +80,14 @@ const DEFAULTS: Settings = {
   },
   zoneContents: DEFAULT_ZONE_CONTENTS,
   customizeMode: false,
-  discordRpc: true
+  discordRpc: true,
+  discordDetailsTemplate: '🎧 {title}',
+  discordStateTemplate: '{artist}',
+  crossfadeSec: 0,
+  audioOutputDeviceId: '',
+  presenceMode: 'online',
+  hideNowPlaying: false,
+  compactVisualizer: true
 }
 
 function load(): Settings {
@@ -114,7 +135,33 @@ function load(): Settings {
       panelSides: { ...DEFAULTS.panelSides, ...(parsed.panelSides ?? {}) },
       zoneContents: zc,
       customizeMode: false,
-      discordRpc: parsed.discordRpc === false ? false : true
+      discordRpc: parsed.discordRpc === false ? false : true,
+      discordDetailsTemplate:
+        typeof parsed.discordDetailsTemplate === 'string'
+          ? parsed.discordDetailsTemplate
+          : DEFAULTS.discordDetailsTemplate,
+      discordStateTemplate:
+        typeof parsed.discordStateTemplate === 'string'
+          ? parsed.discordStateTemplate
+          : DEFAULTS.discordStateTemplate,
+      crossfadeSec:
+        typeof parsed.crossfadeSec === 'number' &&
+        parsed.crossfadeSec >= 0 &&
+        parsed.crossfadeSec <= 10
+          ? parsed.crossfadeSec
+          : DEFAULTS.crossfadeSec,
+      audioOutputDeviceId:
+        typeof parsed.audioOutputDeviceId === 'string'
+          ? parsed.audioOutputDeviceId
+          : DEFAULTS.audioOutputDeviceId,
+      presenceMode:
+        parsed.presenceMode === 'idle' ||
+        parsed.presenceMode === 'busy' ||
+        parsed.presenceMode === 'invisible'
+          ? parsed.presenceMode
+          : 'online',
+      hideNowPlaying: parsed.hideNowPlaying === true,
+      compactVisualizer: parsed.compactVisualizer === false ? false : true
     }
   } catch {
     return DEFAULTS
@@ -175,6 +222,35 @@ export const useSettings = create<SettingsState>((set, get) => ({
   setDiscordRpc: (discordRpc) => {
     set({ discordRpc })
     save({ ...get(), discordRpc })
+  },
+  setDiscordDetailsTemplate: (v) => {
+    set({ discordDetailsTemplate: v })
+    save({ ...get(), discordDetailsTemplate: v })
+  },
+  setDiscordStateTemplate: (v) => {
+    set({ discordStateTemplate: v })
+    save({ ...get(), discordStateTemplate: v })
+  },
+  setCrossfadeSec: (v) => {
+    const clamped = Math.max(0, Math.min(10, v))
+    set({ crossfadeSec: clamped })
+    save({ ...get(), crossfadeSec: clamped })
+  },
+  setAudioOutputDeviceId: (v) => {
+    set({ audioOutputDeviceId: v })
+    save({ ...get(), audioOutputDeviceId: v })
+  },
+  setPresenceMode: (v) => {
+    set({ presenceMode: v })
+    save({ ...get(), presenceMode: v })
+  },
+  setHideNowPlaying: (v) => {
+    set({ hideNowPlaying: v })
+    save({ ...get(), hideNowPlaying: v })
+  },
+  setCompactVisualizer: (v) => {
+    set({ compactVisualizer: v })
+    save({ ...get(), compactVisualizer: v })
   },
   resetAll: () => {
     set({ ...DEFAULTS })

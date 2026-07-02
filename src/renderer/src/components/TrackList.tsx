@@ -28,11 +28,15 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
   const playing = usePlayer((s) => s.playing)
   const setView = useLibrary((s) => s.setView)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [menu, setMenu] = useState<{ x: number; y: number; track: Track } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; tracks: Track[] } | null>(null)
   const [share, setShare] = useState<Attachment | null>(null)
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [playlistSubmenu, setPlaylistSubmenu] = useState(false)
   const [addedTo, setAddedTo] = useState<number | null>(null)
+  // Bulk selection: track ids selected via Ctrl/Shift+click. Cleared on
+  // background click.
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [lastClicked, setLastClicked] = useState<number | null>(null)
 
   function onRowEnter(url: string): void {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
@@ -42,18 +46,68 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
   }
 
+  function onRowClick(e: React.MouseEvent, t: Track, i: number): void {
+    if (e.ctrlKey || e.metaKey) {
+      // Toggle this track in the selection.
+      setSelected((cur) => {
+        const next = new Set(cur)
+        if (next.has(t.id)) next.delete(t.id)
+        else next.add(t.id)
+        return next
+      })
+      setLastClicked(i)
+      return
+    }
+    if (e.shiftKey && lastClicked !== null) {
+      const lo = Math.min(lastClicked, i)
+      const hi = Math.max(lastClicked, i)
+      setSelected((cur) => {
+        const next = new Set(cur)
+        for (let k = lo; k <= hi; k++) next.add(tracks[k].id)
+        return next
+      })
+      return
+    }
+    // Plain click clears the selection.
+    if (selected.size > 0) setSelected(new Set())
+    setLastClicked(i)
+  }
+
   function onContextMenu(e: React.MouseEvent, t: Track): void {
     e.preventDefault()
-    setMenu({ x: e.clientX, y: e.clientY, track: t })
+    // If the right-clicked row isn't already in the selection, treat this
+    // menu as targeting just that one track. Otherwise operate on the full
+    // selection so "add all selected to playlist" works.
+    const targets: Track[] =
+      selected.size > 1 && selected.has(t.id)
+        ? tracks.filter((tk) => selected.has(tk.id))
+        : [t]
+    setMenu({ x: e.clientX, y: e.clientY, tracks: targets })
     setPlaylistSubmenu(false)
     setAddedTo(null)
     void window.api.listPlaylists().then(setPlaylists)
   }
 
-  async function addTrackToPlaylist(playlistId: number, t: Track): Promise<void> {
-    const res = await window.api.addExistingTrackToPlaylist(playlistId, t.id)
-    if (res.ok) {
+  async function addToPlaylist(playlistId: number, ts: Track[]): Promise<void> {
+    let anyOk = false
+    for (const t of ts) {
+      const res = await window.api.addExistingTrackToPlaylist(playlistId, t.id)
+      if (res.ok) anyOk = true
+    }
+    if (anyOk) {
       setAddedTo(playlistId)
+      const name = playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
+      window.dispatchEvent(
+        new CustomEvent('listal:toast', {
+          detail: {
+            message:
+              ts.length === 1
+                ? `Added to ${name}`
+                : `Added ${ts.length} tracks to ${name}`,
+            ttlMs: 2600
+          }
+        })
+      )
       setTimeout(() => {
         setMenu(null)
         setPlaylistSubmenu(false)
@@ -106,9 +160,11 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
 
       {tracks.map((t, i) => {
         const isCurrent = currentTrack?.id === t.id
+        const isSelected = selected.has(t.id)
         return (
           <div
             key={t.id}
+            onClick={(e) => onRowClick(e, t, i)}
             onDoubleClick={() => onPlay(i)}
             onContextMenu={(e) => onContextMenu(e, t)}
             onMouseEnter={() => onRowEnter(t.sourceUrl)}
@@ -116,7 +172,9 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
             className={`group grid h-6 grid-cols-[40px_1fr_220px_140px_60px_28px] items-center gap-2 border-b border-[var(--color-border)]/40 px-2 text-[12px] ${
               isCurrent
                 ? 'bg-[var(--color-row-current)] text-[var(--color-row-current-fg)]'
-                : 'hover:bg-[var(--color-surface-3)]'
+                : isSelected
+                  ? 'bg-[var(--color-accent)]/25'
+                  : 'hover:bg-[var(--color-surface-3)]'
             }`}
           >
             <div className="grid place-items-center">
@@ -197,17 +255,24 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
 
       {menu && (
         <div
-          className="fixed z-50 min-w-[180px] border border-[var(--color-border-strong)] bg-[var(--color-shell)] py-1 text-[12px] shadow-2xl"
+          className="fixed z-50 min-w-[200px] border border-[var(--color-border-strong)] bg-[var(--color-shell)] py-1 text-[12px] shadow-2xl"
           style={{ left: menu.x, top: menu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            onClick={() => openSongRadio(menu.track)}
-            className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
-          >
-            <Radio size={11} />
-            Song Radio
-          </button>
+          {menu.tracks.length > 1 && (
+            <div className="border-b border-[var(--color-border)] px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+              {menu.tracks.length} tracks selected
+            </div>
+          )}
+          {menu.tracks.length === 1 && (
+            <button
+              onClick={() => openSongRadio(menu.tracks[0])}
+              className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
+            >
+              <Radio size={11} />
+              Song Radio
+            </button>
+          )}
           <div
             onMouseEnter={() => setPlaylistSubmenu(true)}
             onMouseLeave={() => setPlaylistSubmenu(false)}
@@ -217,7 +282,9 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
               className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
             >
               <ListPlus size={11} />
-              Add to playlist
+              {menu.tracks.length > 1
+                ? `Add ${menu.tracks.length} tracks to playlist`
+                : 'Add to playlist'}
               <span className="ml-auto text-[10px] opacity-60">▸</span>
             </button>
             {playlistSubmenu && (
@@ -232,7 +299,7 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
                 {playlists.map((p) => (
                   <button
                     key={p.id}
-                    onClick={() => void addTrackToPlaylist(p.id, menu.track)}
+                    onClick={() => void addToPlaylist(p.id, menu.tracks)}
                     className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
                   >
                     {addedTo === p.id ? <Check size={11} /> : <ListPlus size={11} />}
@@ -242,23 +309,30 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
               </div>
             )}
           </div>
-          <button
-            onClick={() => shareTrack(menu.track)}
-            className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
-          >
-            <Send size={11} />
-            Share…
-          </button>
-          <button
-            onClick={() => {
-              window.electron.ipcRenderer.send('open-external', menu.track.sourceUrl)
-              setMenu(null)
-            }}
-            className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
-          >
-            <ExternalLink size={11} />
-            Open source
-          </button>
+          {menu.tracks.length === 1 && (
+            <button
+              onClick={() => shareTrack(menu.tracks[0])}
+              className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
+            >
+              <Send size={11} />
+              Share…
+            </button>
+          )}
+          {menu.tracks.length === 1 && (
+            <button
+              onClick={() => {
+                window.electron.ipcRenderer.send(
+                  'open-external',
+                  menu.tracks[0].sourceUrl
+                )
+                setMenu(null)
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
+            >
+              <ExternalLink size={11} />
+              Open source
+            </button>
+          )}
         </div>
       )}
 
