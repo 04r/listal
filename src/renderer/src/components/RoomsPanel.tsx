@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { X, MessagesSquare, Plus, Compass, Hash, Loader2 } from 'lucide-react'
+import { MessagesSquare, Plus, Compass, Hash, Loader2 } from 'lucide-react'
+import { PanelShell } from './PanelShell'
 import { useRooms, type Room } from '../stores/rooms'
 import { useLibrary } from '../stores/library'
 import { useAuth } from '../stores/auth'
@@ -59,20 +60,13 @@ export function RoomsPanel({ onClose }: Props): React.JSX.Element {
   const joinedIds = new Set(joined.map((r) => r.id))
 
   return (
-    <aside className="flex w-[280px] shrink-0 flex-col border-l border-[var(--color-border-strong)] bg-[var(--color-shell)]">
-      <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border-strong)] bg-[var(--grad-header)] px-2 text-[11px]">
-        <MessagesSquare size={11} />
-        <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-          Rooms
-        </span>
-        <button
-          onClick={onClose}
-          className="ml-auto text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-        >
-          <X size={12} />
-        </button>
-      </div>
-
+    <PanelShell
+      panelKey="rooms"
+      onClose={onClose}
+      icon={<MessagesSquare size={11} />}
+      label="Rooms"
+      floatDefault={{ x: 120, y: 100, w: 320, h: 500 }}
+    >
       <div className="flex border-b border-[var(--color-border)] bg-[var(--grad-transport)] text-[11px]">
         <TabBtn active={tab === 'joined'} onClick={() => setTab('joined')}>
           Joined · {joined.length}
@@ -187,7 +181,7 @@ export function RoomsPanel({ onClose }: Props): React.JSX.Element {
           </button>
         )}
       </div>
-    </aside>
+    </PanelShell>
   )
 }
 

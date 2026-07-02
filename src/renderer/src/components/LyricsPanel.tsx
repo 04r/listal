@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { Loader2, Mic2, PictureInPicture2, PictureInPicture, X } from 'lucide-react'
+import { Loader2, Mic2 } from 'lucide-react'
 import { usePlayer } from '../stores/player'
 import { useLyrics } from '../stores/lyrics'
-import { FloatingWindow } from './FloatingWindow'
-import { usePanelMode } from '../stores/panelMode'
+import { PanelShell } from './PanelShell'
 
 interface Props {
   onClose: () => void
@@ -23,8 +22,6 @@ export function LyricsPanel({ onClose }: Props): React.JSX.Element {
   const positionSec = usePlayer((s) => s.positionSec)
   const durationSec = usePlayer((s) => s.durationSec)
   const seekTo = usePlayer((s) => s.seekTo)
-  const mode = usePanelMode((s) => s.modes.lyrics)
-  const setMode = usePanelMode((s) => s.set)
 
   const lyrics = useLyrics((s) => s.data)
   const loading = useLyrics((s) => s.loading)
@@ -52,8 +49,24 @@ export function LyricsPanel({ onClose }: Props): React.JSX.Element {
     }
   }, [activeIndex])
 
-  const body = (
-    <>
+  return (
+    <PanelShell
+      panelKey="lyrics"
+      onClose={onClose}
+      icon={<Mic2 size={11} />}
+      label="Lyrics"
+      meta={
+        lyrics?.source && (
+          <span className="truncate text-[var(--color-text-dim)]">
+            via {SOURCE_LABEL[lyrics.source]}
+            {lyrics.synced ? ' · synced' : ' · plain'}
+          </span>
+        )
+      }
+      floatDefault={{ x: Math.max(60, window.innerWidth - 420), y: 100, w: 360, h: 480 }}
+      minW={240}
+      minH={220}
+    >
       <div
         ref={scrollRef}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-4 text-[14px] leading-snug"
@@ -122,74 +135,7 @@ export function LyricsPanel({ onClose }: Props): React.JSX.Element {
           <span className="truncate">{lyrics?.trackName ?? track.title}</span>
         </div>
       )}
-    </>
-  )
-
-  const titleContent = (
-    <>
-      <Mic2 size={11} />
-      <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-        Lyrics
-      </span>
-      {lyrics?.source && (
-        <span className="truncate text-[var(--color-text-dim)]">
-          via {SOURCE_LABEL[lyrics.source]}
-          {lyrics.synced ? ' · synced' : ' · plain'}
-        </span>
-      )}
-    </>
-  )
-
-  if (mode === 'float') {
-    return (
-      <FloatingWindow
-        name="lyrics"
-        defaultRect={{ x: Math.max(60, window.innerWidth - 420), y: 100, w: 360, h: 480 }}
-        minW={240}
-        minH={220}
-        onClose={onClose}
-        title={
-          <>
-            {titleContent}
-            <button
-              data-nodrag
-              onClick={() => setMode('lyrics', 'dock')}
-              title="Dock"
-              className="ml-auto mr-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-            >
-              <PictureInPicture2 size={12} />
-            </button>
-          </>
-        }
-      >
-        <div className="flex h-full flex-col">{body}</div>
-      </FloatingWindow>
-    )
-  }
-
-  // Docked — rendered inline in the main content column. Height driven from
-  // the panelMode store so drag-resizing from App.tsx sticks.
-  return (
-    <section className="flex h-full flex-col border-t border-[var(--color-border-strong)] bg-[var(--color-shell)]">
-      <div className="flex h-7 shrink-0 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 text-[11px]">
-        {titleContent}
-        <button
-          onClick={() => setMode('lyrics', 'float')}
-          title="Pop out"
-          className="ml-auto text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-        >
-          <PictureInPicture size={12} />
-        </button>
-        <button
-          onClick={onClose}
-          title="Close"
-          className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-        >
-          <X size={12} />
-        </button>
-      </div>
-      {body}
-    </section>
+    </PanelShell>
   )
 }
 

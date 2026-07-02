@@ -97,6 +97,7 @@ const api = {
     sourceUrl?: string | null
   }): Promise<void> => ipcRenderer.invoke('discord:set', p),
   clearDiscordPresence: (): Promise<void> => ipcRenderer.invoke('discord:clear'),
+  setDiscordEnabled: (v: boolean): Promise<void> => ipcRenderer.invoke('discord:setEnabled', v),
 
   // Updater
   checkForUpdates: (): Promise<

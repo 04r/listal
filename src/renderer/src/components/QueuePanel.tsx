@@ -1,5 +1,6 @@
-import { X, ListMusic, Play, Trash2, Music, Eraser } from 'lucide-react'
+import { ListMusic, Play, Trash2, Music, Eraser } from 'lucide-react'
 import { usePlayer } from '../stores/player'
+import { PanelShell } from './PanelShell'
 
 interface Props {
   onClose: () => void
@@ -17,28 +18,23 @@ export function QueuePanel({ onClose }: Props): React.JSX.Element {
   const current = index >= 0 ? queue[index] : null
 
   return (
-    <aside className="flex w-[300px] shrink-0 flex-col border-l border-[var(--color-border-strong)] bg-[var(--color-shell)]">
-      <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border-strong)] bg-[var(--grad-header)] px-2 text-[11px]">
-        <ListMusic size={11} />
-        <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-          Queue · {queue.length}
-        </span>
+    <PanelShell
+      panelKey="queue"
+      onClose={onClose}
+      icon={<ListMusic size={11} />}
+      label={`Queue · ${queue.length}`}
+      floatDefault={{ x: 100, y: 100, w: 300, h: 480 }}
+      headerExtra={
         <button
           onClick={clearQueue}
           disabled={upcoming.length === 0}
           title="Clear up-next"
-          className="ml-auto grid h-5 w-5 place-items-center text-[var(--color-text-muted)] hover:text-[var(--color-danger)] disabled:opacity-30"
+          className="text-[var(--color-text-muted)] hover:text-[var(--color-danger)] disabled:opacity-30"
         >
           <Eraser size={11} />
         </button>
-        <button
-          onClick={onClose}
-          className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-        >
-          <X size={12} />
-        </button>
-      </div>
-
+      }
+    >
       {current && (
         <div>
           <div className="border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
@@ -54,7 +50,7 @@ export function QueuePanel({ onClose }: Props): React.JSX.Element {
         </div>
       )}
 
-      <div>
+      <div className="flex min-h-0 flex-1 flex-col">
         <div className="border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
           Up next · {upcoming.length}
         </div>
@@ -80,7 +76,7 @@ export function QueuePanel({ onClose }: Props): React.JSX.Element {
           )}
         </div>
       </div>
-    </aside>
+    </PanelShell>
   )
 }
 

@@ -36,6 +36,8 @@ export function SettingsDialog({ onClose }: Props): React.JSX.Element {
   const setPanelSide = useSettings((s) => s.setPanelSide)
   const setCustomizeMode = useSettings((s) => s.setCustomizeMode)
   const setZoneContents = useSettings((s) => s.setZoneContents)
+  const discordRpc = useSettings((s) => s.discordRpc)
+  const setDiscordRpc = useSettings((s) => s.setDiscordRpc)
   const resetAll = useSettings((s) => s.resetAll)
   const [customAccent, setCustomAccent] = useState(accent)
 
@@ -199,6 +201,23 @@ export function SettingsDialog({ onClose }: Props): React.JSX.Element {
             >
               Reset transport layout
             </button>
+          </div>
+        </Section>
+
+        {/* Integrations */}
+        <Section title="Integrations">
+          <label className="flex cursor-pointer items-center gap-2 text-[12px]">
+            <input
+              type="checkbox"
+              checked={discordRpc}
+              onChange={(e) => setDiscordRpc(e.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            <span>Show now-playing on Discord (Rich Presence)</span>
+          </label>
+          <div className="mt-1 text-[10.5px] text-[var(--color-text-dim)]">
+            Off means Listal won't send anything to Discord. Discord doesn't
+            need to be running either way.
           </div>
         </Section>
 

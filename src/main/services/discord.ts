@@ -11,6 +11,7 @@ let ready = false
 let lastActivity: PresenceInput | null = null
 let loginAttempted = false
 let retryTimer: NodeJS.Timeout | null = null
+let enabled = true
 
 export interface PresenceInput {
   title: string
@@ -35,6 +36,7 @@ function scheduleRetry(): void {
 }
 
 export async function initDiscord(): Promise<void> {
+  if (!enabled) return
   if (loginAttempted) return
   loginAttempted = true
   try {
@@ -110,6 +112,7 @@ function fmtTime(sec: number): string {
 }
 
 export function setPresence(p: PresenceInput): void {
+  if (!enabled) return
   lastActivity = p
   applyActivity(p)
 }
@@ -118,6 +121,35 @@ export function clearPresence(): void {
   lastActivity = null
   if (!client || !ready) return
   void client.clearActivity().catch(() => {})
+}
+
+// Toggle from the renderer's SettingsDialog checkbox. Turning off tears down
+// the existing RPC connection so Discord stops showing Listal in the profile.
+// Turning back on kicks off a fresh login attempt.
+export function setEnabled(v: boolean): void {
+  if (enabled === v) return
+  enabled = v
+  if (!v) {
+    if (client && ready) {
+      void client.clearActivity().catch(() => {})
+      try {
+        void client.destroy()
+      } catch {
+        /* ignore */
+      }
+    }
+    client = null
+    ready = false
+    loginAttempted = false
+    if (retryTimer) {
+      clearTimeout(retryTimer)
+      retryTimer = null
+    }
+    return
+  }
+  // Enabled again — kick off a login. If Discord isn't running the retry
+  // loop will handle it.
+  void initDiscord()
 }
 
 function clip(s: string | null | undefined, n: number): string {

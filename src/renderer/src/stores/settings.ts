@@ -22,6 +22,7 @@ interface Settings {
   // Ordered list of slots per zone. Empty array = zone doesn't render.
   zoneContents: Record<Zone, ToolbarSlot[]>
   customizeMode: boolean
+  discordRpc: boolean // send now-playing to Discord Rich Presence
 }
 
 interface SettingsState extends Settings {
@@ -31,6 +32,7 @@ interface SettingsState extends Settings {
   setZoneContents: (next: Record<Zone, ToolbarSlot[]>) => void
   moveSlot: (slot: ToolbarSlot, toZone: Zone, beforeSlot: ToolbarSlot | null) => void
   setCustomizeMode: (v: boolean) => void
+  setDiscordRpc: (v: boolean) => void
   resetAll: () => void
 }
 
@@ -63,7 +65,8 @@ const DEFAULTS: Settings = {
     rooms: 'right'
   },
   zoneContents: DEFAULT_ZONE_CONTENTS,
-  customizeMode: false
+  customizeMode: false,
+  discordRpc: true
 }
 
 function load(): Settings {
@@ -110,7 +113,8 @@ function load(): Settings {
       accent: typeof parsed.accent === 'string' ? parsed.accent : DEFAULTS.accent,
       panelSides: { ...DEFAULTS.panelSides, ...(parsed.panelSides ?? {}) },
       zoneContents: zc,
-      customizeMode: false
+      customizeMode: false,
+      discordRpc: parsed.discordRpc === false ? false : true
     }
   } catch {
     return DEFAULTS
@@ -167,6 +171,10 @@ export const useSettings = create<SettingsState>((set, get) => ({
   setCustomizeMode: (customizeMode) => {
     // Not persisted — intentional. See load().
     set({ customizeMode })
+  },
+  setDiscordRpc: (discordRpc) => {
+    set({ discordRpc })
+    save({ ...get(), discordRpc })
   },
   resetAll: () => {
     set({ ...DEFAULTS })

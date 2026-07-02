@@ -1,5 +1,6 @@
-import { SlidersHorizontal, RotateCcw } from 'lucide-react'
-import { useAudioSettings } from '../stores/audioSettings'
+import { useState } from 'react'
+import { SlidersHorizontal, RotateCcw, Save, Trash2 } from 'lucide-react'
+import { useAudioSettings, builtInPresetNames } from '../stores/audioSettings'
 import { FloatingWindow } from './FloatingWindow'
 
 interface Props {
@@ -18,6 +19,31 @@ export function AudioSettingsPanel({ onClose }: Props): React.JSX.Element {
   const setTreble = useAudioSettings((s) => s.setTreble)
   const setReverb = useAudioSettings((s) => s.setReverb)
   const reset = useAudioSettings((s) => s.reset)
+  const presets = useAudioSettings((s) => s.presets)
+  const activePreset = useAudioSettings((s) => s.activePreset)
+  const loadPreset = useAudioSettings((s) => s.loadPreset)
+  const savePreset = useAudioSettings((s) => s.savePreset)
+  const deletePreset = useAudioSettings((s) => s.deletePreset)
+
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [saveName, setSaveName] = useState('')
+
+  const presetNames = Object.keys(presets).sort()
+  const builtIns = new Set(builtInPresetNames())
+
+  function onPickPreset(e: React.ChangeEvent<HTMLSelectElement>): void {
+    const v = e.target.value
+    if (v === '__none') return
+    loadPreset(v)
+  }
+
+  function submitSave(): void {
+    const name = saveName.trim()
+    if (!name) return
+    savePreset(name)
+    setSaveName('')
+    setSaveOpen(false)
+  }
 
   return (
     <FloatingWindow
@@ -41,6 +67,86 @@ export function AudioSettingsPanel({ onClose }: Props): React.JSX.Element {
       onClose={onClose}
     >
       <div className="flex h-full flex-col overflow-y-auto p-3 text-[11.5px]">
+        <div className="mb-2 flex items-center gap-1">
+          <span className="text-[10.5px] uppercase tracking-wider text-[var(--color-text-muted)]">
+            Preset
+          </span>
+          <select
+            value={activePreset ?? '__none'}
+            onChange={onPickPreset}
+            className="h-6 min-w-0 flex-1 border border-[var(--color-border-strong)] bg-[var(--color-input)] px-1 text-[11.5px] text-[var(--color-text)]"
+          >
+            <option value="__none">Custom</option>
+            <optgroup label="Built-in">
+              {presetNames
+                .filter((n) => builtIns.has(n))
+                .map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+            </optgroup>
+            {presetNames.some((n) => !builtIns.has(n)) && (
+              <optgroup label="Yours">
+                {presetNames
+                  .filter((n) => !builtIns.has(n))
+                  .map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+              </optgroup>
+            )}
+          </select>
+          <button
+            onClick={() => {
+              setSaveName(activePreset ?? '')
+              setSaveOpen(true)
+            }}
+            title="Save current mix as a preset"
+            className="grid h-6 w-6 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] hover:bg-[var(--grad-btn-hover)]"
+          >
+            <Save size={11} />
+          </button>
+          <button
+            onClick={() => activePreset && deletePreset(activePreset)}
+            disabled={!activePreset}
+            title="Delete selected preset"
+            className="grid h-6 w-6 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] hover:bg-[var(--grad-btn-hover)] disabled:opacity-40"
+          >
+            <Trash2 size={11} />
+          </button>
+        </div>
+
+        {saveOpen && (
+          <div className="mb-2 flex items-center gap-1">
+            <input
+              autoFocus
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitSave()
+                else if (e.key === 'Escape') setSaveOpen(false)
+              }}
+              placeholder="Preset name"
+              className="h-6 flex-1 border border-[var(--color-border-strong)] bg-[var(--color-input)] px-1.5 text-[11.5px] outline-none focus:border-[var(--color-accent)]"
+            />
+            <button
+              onClick={submitSave}
+              disabled={!saveName.trim()}
+              className="border border-[var(--color-border-strong)] bg-[var(--grad-primary)] px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-[var(--grad-primary-hover)] disabled:opacity-40"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => setSaveOpen(false)}
+              className="border border-[var(--color-border-strong)] bg-[var(--grad-btn)] px-2 py-0.5 text-[11px] hover:bg-[var(--grad-btn-hover)]"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
         <EqCurve bass={bass} mid={mid} treble={treble} />
         <div className="mt-3 grid grid-cols-3 gap-3">
           <Slider label="Bass" unit="dB" min={-12} max={12} step={0.5} value={bass} onChange={setBass} />

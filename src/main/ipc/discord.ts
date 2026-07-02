@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { setPresence, clearPresence, type PresenceInput } from '../services/discord'
+import { setPresence, clearPresence, setEnabled, type PresenceInput } from '../services/discord'
 
 export function registerDiscordIpc(): void {
   ipcMain.handle('discord:set', (_e, p: PresenceInput) => {
@@ -7,5 +7,8 @@ export function registerDiscordIpc(): void {
   })
   ipcMain.handle('discord:clear', () => {
     clearPresence()
+  })
+  ipcMain.handle('discord:setEnabled', (_e, enabled: boolean) => {
+    setEnabled(Boolean(enabled))
   })
 }

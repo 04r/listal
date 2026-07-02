@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Send, Loader2 } from 'lucide-react'
+import { Send, Loader2, MessageSquare } from 'lucide-react'
 import { useAuth } from '../stores/auth'
 import { useChat } from '../stores/chat'
 import { decodeAttachment } from '../lib/attachments'
 import { SharedSongCard, SharedPlaylistCard, SharedConvoyInviteCard } from './SharedCards'
+import { PanelShell } from './PanelShell'
 
 export function ChatPanel(): React.JSX.Element | null {
   const peer = useChat((s) => s.peer)
@@ -32,20 +33,18 @@ export function ChatPanel(): React.JSX.Element | null {
   }
 
   return (
-    <aside className="flex h-full w-[300px] shrink-0 flex-col border-l border-[var(--color-border-strong)] bg-[var(--color-shell)]">
-      <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 text-[11px]">
-        <span className="truncate font-semibold text-[var(--color-text)]">
-          {peer.display_name ?? peer.username}
-        </span>
-        <span className="truncate text-[var(--color-text-dim)]">@{peer.username}</span>
-        <button
-          onClick={() => void close()}
-          className="ml-auto text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-        >
-          <X size={12} />
-        </button>
-      </div>
-
+    <PanelShell
+      panelKey="chat"
+      onClose={() => void close()}
+      icon={<MessageSquare size={11} />}
+      label={`@${peer.username}`}
+      meta={
+        peer.display_name && (
+          <span className="truncate text-[var(--color-text-dim)]">{peer.display_name}</span>
+        )
+      }
+      floatDefault={{ x: 140, y: 120, w: 320, h: 480 }}
+    >
       <div ref={scrollRef} className="flex-1 overflow-y-auto bg-[var(--color-surface)] px-2 py-2">
         {loading && (
           <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-muted)]">
@@ -116,6 +115,6 @@ export function ChatPanel(): React.JSX.Element | null {
           <Send size={11} />
         </button>
       </form>
-    </aside>
+    </PanelShell>
   )
 }

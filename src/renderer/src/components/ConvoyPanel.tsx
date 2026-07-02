@@ -1,12 +1,11 @@
 import { useState } from 'react'
-import { X, Radio, Copy, LogOut, Music, UserPlus, Check, SkipForward, ShieldCheck, Shield, PictureInPicture, PictureInPicture2 } from 'lucide-react'
+import { X, Radio, Copy, LogOut, Music, UserPlus, Check, SkipForward, ShieldCheck, Shield } from 'lucide-react'
 import { useConvoy } from '../stores/convoy'
 import { useFriends } from '../stores/friends'
 import { useAuth } from '../stores/auth'
-import { FloatingWindow } from './FloatingWindow'
 import { encodeAttachment } from '../lib/attachments'
 import { supabase } from '../lib/supabase'
-import { usePanelMode } from '../stores/panelMode'
+import { PanelShell } from './PanelShell'
 
 interface Props {
   onClose: () => void
@@ -370,63 +369,18 @@ function ConvoyShell({
   onClose: () => void
   children: React.ReactNode
 }): React.JSX.Element {
-  const mode = usePanelMode((s) => s.modes.convoy)
-  const setMode = usePanelMode((s) => s.set)
-  const title = (
-    <>
-      <Radio size={11} />
-      <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-        Convoy
-      </span>
-    </>
-  )
-  if (mode === 'float') {
-    return (
-      <FloatingWindow
-        name="convoy"
-        defaultRect={{ x: 60, y: 100, w: 300, h: 520 }}
-        minW={240}
-        minH={220}
-        onClose={onClose}
-        title={
-          <>
-            {title}
-            <button
-              data-nodrag
-              onClick={() => setMode('convoy', 'dock')}
-              title="Dock"
-              className="ml-auto mr-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-            >
-              <PictureInPicture2 size={12} />
-            </button>
-          </>
-        }
-      >
-        {children}
-      </FloatingWindow>
-    )
-  }
   return (
-    <section className="flex h-full flex-col border-t border-[var(--color-border-strong)] bg-[var(--color-shell)]">
-      <div className="flex h-7 shrink-0 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 text-[11px]">
-        {title}
-        <button
-          onClick={() => setMode('convoy', 'float')}
-          title="Pop out"
-          className="ml-auto text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-        >
-          <PictureInPicture size={12} />
-        </button>
-        <button
-          onClick={onClose}
-          title="Close"
-          className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-        >
-          <X size={12} />
-        </button>
-      </div>
+    <PanelShell
+      panelKey="convoy"
+      onClose={onClose}
+      icon={<Radio size={11} />}
+      label="Convoy"
+      floatDefault={{ x: 60, y: 100, w: 300, h: 520 }}
+      minW={240}
+      minH={220}
+    >
       {children}
-    </section>
+    </PanelShell>
   )
 }
 

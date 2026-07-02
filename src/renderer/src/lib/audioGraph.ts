@@ -33,6 +33,7 @@ let dryGain: GainNode | null = null
 let wetGain: GainNode | null = null
 let masterGain: GainNode | null = null
 let convolver: ConvolverNode | null = null
+let analyser: AnalyserNode | null = null
 
 // Guard: WebAudio spec forbids calling createMediaElementSource on the same
 // element twice. We remember which elements we've already routed.
@@ -71,6 +72,10 @@ function ensureCtx(): AudioContext {
   masterGain = ctx.createGain()
   masterGain.gain.value = 1
 
+  analyser = ctx.createAnalyser()
+  analyser.fftSize = 1024
+  analyser.smoothingTimeConstant = 0.82
+
   // Wire the filter chain (elements attach into `bass` via attachAudio).
   bass.connect(mid)
   mid.connect(treble)
@@ -82,8 +87,16 @@ function ensureCtx(): AudioContext {
   convolver.connect(wetGain)
   wetGain.connect(masterGain)
 
+  // Fan out to analyser for visualisation. Analyser doesn't need to connect
+  // back to the destination — it's a passive tap.
+  masterGain.connect(analyser)
   masterGain.connect(ctx.destination)
   return ctx
+}
+
+export function getAnalyser(): AnalyserNode | null {
+  ensureCtx()
+  return analyser
 }
 
 export function attachAudio(a: HTMLAudioElement): void {

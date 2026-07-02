@@ -24,12 +24,14 @@ import { ChatPanel } from './components/ChatPanel'
 import { AddTrackDialog } from './components/AddTrackDialog'
 import { ToastLayer } from './components/Toast'
 import { AudioSettingsPanel } from './components/AudioSettingsPanel'
+import { AudioVisualizerPanel } from './components/AudioVisualizerPanel'
 import { useLibrary } from './stores/library'
 import { useAuth } from './stores/auth'
 import { useSocial } from './stores/social'
 import { useFriends } from './stores/friends'
 import { useConvoy } from './stores/convoy'
 import { useRooms } from './stores/rooms'
+import { useChat } from './stores/chat'
 import { startConvoyPlayerSync, stopConvoyPlayerSync } from './stores/convoyPlayerSync'
 import { usePlayer } from './stores/player'
 import { useLyrics } from './stores/lyrics'
@@ -49,16 +51,24 @@ function App(): React.JSX.Element {
   const theme = useSettings((s) => s.theme)
   const accent = useSettings((s) => s.accent)
   const panelSides = useSettings((s) => s.panelSides)
-  const lyricsMode = usePanelMode((s) => s.modes.lyrics)
-  const convoyMode = usePanelMode((s) => s.modes.convoy)
-  const lyricsHeight = usePanelMode((s) => s.heights.lyrics)
-  const convoyHeight = usePanelMode((s) => s.heights.convoy)
-  const setHeight = usePanelMode((s) => s.setHeight)
+  const discordRpc = useSettings((s) => s.discordRpc)
+  const [vizOpen, setVizOpen] = useState(false)
+  const panelModes = usePanelMode((s) => s.modes)
+  const columnWidth = usePanelMode((s) => s.columnWidth)
+  const setColumnWidth = usePanelMode((s) => s.setColumnWidth)
+  const chatOpen = useChat((s) => s.peer !== null)
 
   // Push theme + accent onto <html> whenever they change.
   useEffect(() => {
     applySettingsToDom({ theme, accent })
   }, [theme, accent])
+
+  // Push the Discord RPC toggle into the main process. Runs on startup so a
+  // freshly-loaded renderer restores the persisted state.
+  useEffect(() => {
+    void window.api.setDiscordEnabled(discordRpc)
+    if (!discordRpc) void window.api.clearDiscordPresence()
+  }, [discordRpc])
   const [authOpen, setAuthOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const profile = useAuth((s) => s.profile)
@@ -173,6 +183,8 @@ function App(): React.JSX.Element {
     window.addEventListener('listal:open-profile', prof)
     const ao = (): void => setAudioOpen((v) => !v)
     window.addEventListener('listal:toggle-audio', ao)
+    const vz = (): void => setVizOpen((v) => !v)
+    window.addEventListener('listal:toggle-visualizer', vz)
     return () => {
       window.removeEventListener('listal:toggle-lyrics', lyr)
       window.removeEventListener('listal:toggle-friends', fr)
@@ -182,6 +194,7 @@ function App(): React.JSX.Element {
       window.removeEventListener('listal:open-settings', st)
       window.removeEventListener('listal:open-profile', prof)
       window.removeEventListener('listal:toggle-audio', ao)
+      window.removeEventListener('listal:toggle-visualizer', vz)
     }
   }, [profile, convoySession, friendsOpen, convoyOpen, queueOpen, roomsOpen])
 
@@ -237,56 +250,36 @@ function App(): React.JSX.Element {
               onCloseRooms: () => setRoomsOpen(false)
             })}
             <Sidebar />
-            <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--color-surface)]">
-              {lyricsOpen && lyricsMode === 'dock' && (
-                <>
-                  <div style={{ height: lyricsHeight }} className="shrink-0 overflow-hidden">
-                    <LyricsPanel onClose={() => setLyricsOpen(false)} />
-                  </div>
-                  <DockResizer
-                    onDrag={(dy) => setHeight('lyrics', lyricsHeight + dy)}
-                  />
-                </>
+            <main className="min-w-0 flex-1 overflow-hidden bg-[var(--color-surface)]">
+              {view.kind === 'library' && <LibraryView />}
+              {view.kind === 'search' && <SearchView />}
+              {view.kind === 'playlist' && <PlaylistView playlistId={view.id} />}
+              {view.kind === 'artist' && <ArtistView key={view.name} name={view.name} />}
+              {view.kind === 'uploader' && (
+                <UploaderView key={view.name} name={view.name} />
               )}
-              {convoyOpen && convoyMode === 'dock' && convoySession && (
-                <>
-                  <div style={{ height: convoyHeight }} className="shrink-0 overflow-hidden">
-                    <ConvoyPanel onClose={() => setConvoyOpen(false)} />
-                  </div>
-                  <DockResizer
-                    onDrag={(dy) => setHeight('convoy', convoyHeight + dy)}
-                  />
-                </>
+              {view.kind === 'radio' && (
+                <RadioView key={view.seedUrl} seedUrl={view.seedUrl} seedTitle={view.seedTitle} />
               )}
-              <div className="min-h-0 flex-1 overflow-hidden">
-                {view.kind === 'library' && <LibraryView />}
-                {view.kind === 'search' && <SearchView />}
-                {view.kind === 'playlist' && <PlaylistView playlistId={view.id} />}
-                {view.kind === 'artist' && <ArtistView key={view.name} name={view.name} />}
-                {view.kind === 'uploader' && (
-                  <UploaderView key={view.name} name={view.name} />
-                )}
-                {view.kind === 'radio' && (
-                  <RadioView key={view.seedUrl} seedUrl={view.seedUrl} seedTitle={view.seedTitle} />
-                )}
-                {view.kind === 'room' && <RoomView key={view.roomId} roomId={view.roomId} />}
-              </div>
+              {view.kind === 'room' && <RoomView key={view.roomId} roomId={view.roomId} />}
             </main>
-            {renderPanels('right', {
-              friendsOpen,
-              convoyOpen,
-              queueOpen,
-              lyricsOpen,
-              roomsOpen,
-              convoySession,
-              profile,
-              panelSides,
-              onCloseFriends: () => setFriendsOpen(false),
-              onCloseConvoy: () => setConvoyOpen(false),
-              onCloseQueue: () => setQueueOpen(false),
-              onCloseLyrics: () => setLyricsOpen(false),
-              onCloseRooms: () => setRoomsOpen(false)
-            })}
+            <RightPanelColumn
+              panelModes={panelModes}
+              columnWidth={columnWidth}
+              onColumnDrag={(dx) => setColumnWidth(columnWidth - dx)}
+              friendsOpen={friendsOpen}
+              convoyOpen={convoyOpen}
+              queueOpen={queueOpen}
+              lyricsOpen={lyricsOpen}
+              roomsOpen={roomsOpen}
+              chatOpen={chatOpen}
+              convoySession={!!convoySession}
+              onCloseFriends={() => setFriendsOpen(false)}
+              onCloseConvoy={() => setConvoyOpen(false)}
+              onCloseQueue={() => setQueueOpen(false)}
+              onCloseLyrics={() => setLyricsOpen(false)}
+              onCloseRooms={() => setRoomsOpen(false)}
+            />
             <TransportZone
               zone="right"
               orientation="vertical"
@@ -299,7 +292,6 @@ function App(): React.JSX.Element {
               queueOpen={queueOpen}
               onToggleQueue={toggleQueue}
             />
-            <ChatPanel />
           </>
         )}
       </div>
@@ -332,12 +324,27 @@ function App(): React.JSX.Element {
       )}
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
       {audioOpen && <AudioSettingsPanel onClose={() => setAudioOpen(false)} />}
-      {lyricsOpen && lyricsMode === 'float' && (
+      {vizOpen && <AudioVisualizerPanel onClose={() => setVizOpen(false)} />}
+      {/* Floated panels — PanelShell renders each as a FloatingWindow when
+          its stored mode is 'float', so we just always render them here and
+          they either fall through as nulls (dock mode) or as floating
+          windows. This keeps the state colocated with the panel. */}
+      {lyricsOpen && panelModes.lyrics === 'float' && (
         <LyricsPanel onClose={() => setLyricsOpen(false)} />
       )}
-      {convoyOpen && convoyMode === 'float' && convoySession && profile && (
+      {convoyOpen && panelModes.convoy === 'float' && convoySession && profile && (
         <ConvoyPanel onClose={() => setConvoyOpen(false)} />
       )}
+      {friendsOpen && panelModes.friends === 'float' && profile && (
+        <FriendsPanel onClose={() => setFriendsOpen(false)} />
+      )}
+      {queueOpen && panelModes.queue === 'float' && (
+        <QueuePanel onClose={() => setQueueOpen(false)} />
+      )}
+      {roomsOpen && panelModes.rooms === 'float' && profile && (
+        <RoomsPanel onClose={() => setRoomsOpen(false)} />
+      )}
+      {chatOpen && panelModes.chat === 'float' && <ChatPanel />}
       <ToastLayer />
     </div>
   )
@@ -421,17 +428,58 @@ function renderPanels(side: 'left' | 'right', a: PanelRenderArgs): React.ReactNo
   )
 }
 
-// Thin horizontal grabber between a docked panel and the content below. Drags
-// live-update the panel's stored height.
-function DockResizer({ onDrag }: { onDrag: (dy: number) => void }): React.JSX.Element {
-  function onMouseDown(e: React.MouseEvent): void {
+interface RightColProps {
+  panelModes: Record<import('./stores/panelMode').PanelKey, 'dock' | 'float'>
+  columnWidth: number
+  onColumnDrag: (dx: number) => void
+  friendsOpen: boolean
+  convoyOpen: boolean
+  queueOpen: boolean
+  lyricsOpen: boolean
+  roomsOpen: boolean
+  chatOpen: boolean
+  convoySession: boolean
+  onCloseFriends: () => void
+  onCloseConvoy: () => void
+  onCloseQueue: () => void
+  onCloseLyrics: () => void
+  onCloseRooms: () => void
+}
+
+// Single vertical stacked column on the right that hosts every open, docked
+// panel. Each takes an equal share via flex-1, so two open panels split 50/50,
+// three split 33/33/33, and so on. A vertical resizer on the left edge lets
+// the user widen or shrink the whole column.
+function RightPanelColumn(p: RightColProps): React.JSX.Element | null {
+  const slots: React.ReactNode[] = []
+  if (p.friendsOpen && p.panelModes.friends === 'dock') {
+    slots.push(<FriendsPanel key="friends" onClose={p.onCloseFriends} />)
+  }
+  if (p.convoyOpen && p.convoySession && p.panelModes.convoy === 'dock') {
+    slots.push(<ConvoyPanel key="convoy" onClose={p.onCloseConvoy} />)
+  }
+  if (p.queueOpen && p.panelModes.queue === 'dock') {
+    slots.push(<QueuePanel key="queue" onClose={p.onCloseQueue} />)
+  }
+  if (p.roomsOpen && p.panelModes.rooms === 'dock') {
+    slots.push(<RoomsPanel key="rooms" onClose={p.onCloseRooms} />)
+  }
+  if (p.lyricsOpen && p.panelModes.lyrics === 'dock') {
+    slots.push(<LyricsPanel key="lyrics" onClose={p.onCloseLyrics} />)
+  }
+  if (p.chatOpen && p.panelModes.chat === 'dock') {
+    slots.push(<ChatPanel key="chat" />)
+  }
+
+  if (slots.length === 0) return null
+
+  function onResizeDown(e: React.MouseEvent): void {
     e.preventDefault()
-    const startY = e.clientY
-    let lastY = startY
+    let last = e.clientX
     const move = (ev: MouseEvent): void => {
-      const dy = ev.clientY - lastY
-      lastY = ev.clientY
-      onDrag(dy)
+      const dx = ev.clientX - last
+      last = ev.clientX
+      p.onColumnDrag(dx)
     }
     const up = (): void => {
       window.removeEventListener('mousemove', move)
@@ -440,11 +488,24 @@ function DockResizer({ onDrag }: { onDrag: (dy: number) => void }): React.JSX.El
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
   }
+
   return (
-    <div
-      onMouseDown={onMouseDown}
-      className="h-1 shrink-0 cursor-ns-resize bg-[var(--color-border-strong)] hover:bg-[var(--color-accent)]"
-    />
+    <div className="flex h-full shrink-0">
+      <div
+        onMouseDown={onResizeDown}
+        className="w-1 shrink-0 cursor-ew-resize bg-[var(--color-border-strong)] hover:bg-[var(--color-accent)]"
+      />
+      <div
+        style={{ width: p.columnWidth }}
+        className="flex h-full flex-col overflow-hidden border-l border-[var(--color-border-strong)] bg-[var(--color-shell)]"
+      >
+        {slots.map((slot, i) => (
+          <div key={i} className="flex min-h-0 flex-1 flex-col overflow-hidden border-b border-[var(--color-border-strong)] last:border-b-0">
+            {slot}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

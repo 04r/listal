@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import {
-  X,
   Loader2,
   UserPlus,
   Check,
@@ -8,7 +7,8 @@ import {
   MessageSquare,
   Radio,
   Music,
-  RotateCw
+  RotateCw,
+  Users
 } from 'lucide-react'
 import { useAuth } from '../stores/auth'
 import { useFriends } from '../stores/friends'
@@ -16,6 +16,7 @@ import type { Profile } from '../lib/supabase'
 import { useSocial } from '../stores/social'
 import { useListenAlong } from '../stores/listenAlong'
 import { useChat } from '../stores/chat'
+import { PanelShell } from './PanelShell'
 
 interface Props {
   onClose: () => void
@@ -57,20 +58,14 @@ export function FriendsPanel({ onClose }: Props): React.JSX.Element {
   const shownError = localError ?? error
 
   return (
-    <aside className="flex h-full w-[320px] shrink-0 flex-col border-l border-[var(--color-border-strong)] bg-[var(--color-shell)]">
-      <div className="flex h-7 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 text-[11px]">
-        <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-          Friends
-        </span>
-        {me && <span className="text-[var(--color-text-dim)]">@{me.username}</span>}
-        <button
-          onClick={onClose}
-          className="ml-auto text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-        >
-          <X size={12} />
-        </button>
-      </div>
-
+    <PanelShell
+      panelKey="friends"
+      onClose={onClose}
+      icon={<Users size={11} />}
+      label="Friends"
+      meta={me && <span className="text-[var(--color-text-dim)]">@{me.username}</span>}
+      floatDefault={{ x: 80, y: 100, w: 320, h: 520 }}
+    >
       {!me ? (
         <div className="px-3 py-3 text-[11px] text-[var(--color-text-muted)]">
           Sign in to use friends.
@@ -184,7 +179,7 @@ export function FriendsPanel({ onClose }: Props): React.JSX.Element {
           )}
         </div>
       )}
-    </aside>
+    </PanelShell>
   )
 }
 

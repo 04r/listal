@@ -172,6 +172,10 @@ function Menubar({ onOpenAuth }: { onOpenAuth: () => void }): React.JSX.Element 
       {
         label: 'Audio (EQ, reverb…)',
         onClick: () => window.dispatchEvent(new CustomEvent('listal:toggle-audio'))
+      },
+      {
+        label: 'Visualizer',
+        onClick: () => window.dispatchEvent(new CustomEvent('listal:toggle-visualizer'))
       }
     ],
     Library: [
