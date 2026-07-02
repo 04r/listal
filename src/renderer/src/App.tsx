@@ -34,6 +34,7 @@ import { startConvoyPlayerSync, stopConvoyPlayerSync } from './stores/convoyPlay
 import { usePlayer } from './stores/player'
 import { useLyrics } from './stores/lyrics'
 import { useSettings, applySettingsToDom, type PanelKey } from './stores/settings'
+import { usePanelMode } from './stores/panelMode'
 
 function App(): React.JSX.Element {
   const view = useLibrary((s) => s.view)
@@ -48,6 +49,11 @@ function App(): React.JSX.Element {
   const theme = useSettings((s) => s.theme)
   const accent = useSettings((s) => s.accent)
   const panelSides = useSettings((s) => s.panelSides)
+  const lyricsMode = usePanelMode((s) => s.modes.lyrics)
+  const convoyMode = usePanelMode((s) => s.modes.convoy)
+  const lyricsHeight = usePanelMode((s) => s.heights.lyrics)
+  const convoyHeight = usePanelMode((s) => s.heights.convoy)
+  const setHeight = usePanelMode((s) => s.setHeight)
 
   // Push theme + accent onto <html> whenever they change.
   useEffect(() => {
@@ -231,16 +237,40 @@ function App(): React.JSX.Element {
               onCloseRooms: () => setRoomsOpen(false)
             })}
             <Sidebar />
-            <main className="min-w-0 flex-1 overflow-hidden bg-[var(--color-surface)]">
-              {view.kind === 'library' && <LibraryView />}
-              {view.kind === 'search' && <SearchView />}
-              {view.kind === 'playlist' && <PlaylistView playlistId={view.id} />}
-              {view.kind === 'artist' && <ArtistView key={view.name} name={view.name} />}
-              {view.kind === 'uploader' && <UploaderView key={view.name} name={view.name} />}
-              {view.kind === 'radio' && (
-                <RadioView key={view.seedUrl} seedUrl={view.seedUrl} seedTitle={view.seedTitle} />
+            <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[var(--color-surface)]">
+              {lyricsOpen && lyricsMode === 'dock' && (
+                <>
+                  <div style={{ height: lyricsHeight }} className="shrink-0 overflow-hidden">
+                    <LyricsPanel onClose={() => setLyricsOpen(false)} />
+                  </div>
+                  <DockResizer
+                    onDrag={(dy) => setHeight('lyrics', lyricsHeight + dy)}
+                  />
+                </>
               )}
-              {view.kind === 'room' && <RoomView key={view.roomId} roomId={view.roomId} />}
+              {convoyOpen && convoyMode === 'dock' && convoySession && (
+                <>
+                  <div style={{ height: convoyHeight }} className="shrink-0 overflow-hidden">
+                    <ConvoyPanel onClose={() => setConvoyOpen(false)} />
+                  </div>
+                  <DockResizer
+                    onDrag={(dy) => setHeight('convoy', convoyHeight + dy)}
+                  />
+                </>
+              )}
+              <div className="min-h-0 flex-1 overflow-hidden">
+                {view.kind === 'library' && <LibraryView />}
+                {view.kind === 'search' && <SearchView />}
+                {view.kind === 'playlist' && <PlaylistView playlistId={view.id} />}
+                {view.kind === 'artist' && <ArtistView key={view.name} name={view.name} />}
+                {view.kind === 'uploader' && (
+                  <UploaderView key={view.name} name={view.name} />
+                )}
+                {view.kind === 'radio' && (
+                  <RadioView key={view.seedUrl} seedUrl={view.seedUrl} seedTitle={view.seedTitle} />
+                )}
+                {view.kind === 'room' && <RoomView key={view.roomId} roomId={view.roomId} />}
+              </div>
             </main>
             {renderPanels('right', {
               friendsOpen,
@@ -302,6 +332,12 @@ function App(): React.JSX.Element {
       )}
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
       {audioOpen && <AudioSettingsPanel onClose={() => setAudioOpen(false)} />}
+      {lyricsOpen && lyricsMode === 'float' && (
+        <LyricsPanel onClose={() => setLyricsOpen(false)} />
+      )}
+      {convoyOpen && convoyMode === 'float' && convoySession && profile && (
+        <ConvoyPanel onClose={() => setConvoyOpen(false)} />
+      )}
       <ToastLayer />
     </div>
   )
@@ -375,19 +411,40 @@ function renderPanels(side: 'left' | 'right', a: PanelRenderArgs): React.ReactNo
       {a.friendsOpen && a.profile && a.panelSides.friends === side && wrap(
         <FriendsPanel onClose={a.onCloseFriends} />
       )}
-      {a.convoyOpen && a.profile && a.convoySession && a.panelSides.convoy === side && wrap(
-        <ConvoyPanel onClose={a.onCloseConvoy} />
-      )}
       {a.queueOpen && a.panelSides.queue === side && wrap(
         <QueuePanel onClose={a.onCloseQueue} />
-      )}
-      {a.lyricsOpen && a.panelSides.lyrics === side && wrap(
-        <LyricsPanel onClose={a.onCloseLyrics} />
       )}
       {a.roomsOpen && a.profile && a.panelSides.rooms === side && wrap(
         <RoomsPanel onClose={a.onCloseRooms} />
       )}
     </>
+  )
+}
+
+// Thin horizontal grabber between a docked panel and the content below. Drags
+// live-update the panel's stored height.
+function DockResizer({ onDrag }: { onDrag: (dy: number) => void }): React.JSX.Element {
+  function onMouseDown(e: React.MouseEvent): void {
+    e.preventDefault()
+    const startY = e.clientY
+    let lastY = startY
+    const move = (ev: MouseEvent): void => {
+      const dy = ev.clientY - lastY
+      lastY = ev.clientY
+      onDrag(dy)
+    }
+    const up = (): void => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      className="h-1 shrink-0 cursor-ns-resize bg-[var(--color-border-strong)] hover:bg-[var(--color-accent)]"
+    />
   )
 }
 

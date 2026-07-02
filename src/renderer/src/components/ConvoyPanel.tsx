@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { X, Radio, Copy, LogOut, Music, UserPlus, Check, SkipForward, ShieldCheck, Shield } from 'lucide-react'
+import { X, Radio, Copy, LogOut, Music, UserPlus, Check, SkipForward, ShieldCheck, Shield, PictureInPicture, PictureInPicture2 } from 'lucide-react'
 import { useConvoy } from '../stores/convoy'
 import { useFriends } from '../stores/friends'
 import { useAuth } from '../stores/auth'
 import { FloatingWindow } from './FloatingWindow'
 import { encodeAttachment } from '../lib/attachments'
 import { supabase } from '../lib/supabase'
+import { usePanelMode } from '../stores/panelMode'
 
 interface Props {
   onClose: () => void
@@ -24,9 +25,9 @@ export function ConvoyPanel({ onClose }: Props): React.JSX.Element {
 
   if (!session || !me) {
     return (
-      <ConvoyFloat onClose={onClose}>
+      <ConvoyShell onClose={onClose}>
         <div className="p-3 text-[11px] text-[var(--color-text-muted)]">Not in a Convoy.</div>
-      </ConvoyFloat>
+      </ConvoyShell>
     )
   }
 
@@ -94,7 +95,7 @@ export function ConvoyPanel({ onClose }: Props): React.JSX.Element {
   }
 
   return (
-    <ConvoyFloat onClose={onClose}>
+    <ConvoyShell onClose={onClose}>
       <div className="flex h-full flex-col overflow-y-auto">
       {/* Code + leave */}
       <div className="border-b border-[var(--color-border)] px-3 py-2">
@@ -358,35 +359,74 @@ export function ConvoyPanel({ onClose }: Props): React.JSX.Element {
         </div>
       </Section>
       </div>
-    </ConvoyFloat>
+    </ConvoyShell>
   )
 }
 
-function ConvoyFloat({
+function ConvoyShell({
   onClose,
   children
 }: {
   onClose: () => void
   children: React.ReactNode
 }): React.JSX.Element {
+  const mode = usePanelMode((s) => s.modes.convoy)
+  const setMode = usePanelMode((s) => s.set)
+  const title = (
+    <>
+      <Radio size={11} />
+      <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+        Convoy
+      </span>
+    </>
+  )
+  if (mode === 'float') {
+    return (
+      <FloatingWindow
+        name="convoy"
+        defaultRect={{ x: 60, y: 100, w: 300, h: 520 }}
+        minW={240}
+        minH={220}
+        onClose={onClose}
+        title={
+          <>
+            {title}
+            <button
+              data-nodrag
+              onClick={() => setMode('convoy', 'dock')}
+              title="Dock"
+              className="ml-auto mr-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+            >
+              <PictureInPicture2 size={12} />
+            </button>
+          </>
+        }
+      >
+        {children}
+      </FloatingWindow>
+    )
+  }
   return (
-    <FloatingWindow
-      name="convoy"
-      defaultRect={{ x: 60, y: 100, w: 300, h: 520 }}
-      minW={240}
-      minH={220}
-      onClose={onClose}
-      title={
-        <>
-          <Radio size={11} />
-          <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-            Convoy
-          </span>
-        </>
-      }
-    >
+    <section className="flex h-full flex-col border-t border-[var(--color-border-strong)] bg-[var(--color-shell)]">
+      <div className="flex h-7 shrink-0 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 text-[11px]">
+        {title}
+        <button
+          onClick={() => setMode('convoy', 'float')}
+          title="Pop out"
+          className="ml-auto text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+        >
+          <PictureInPicture size={12} />
+        </button>
+        <button
+          onClick={onClose}
+          title="Close"
+          className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+        >
+          <X size={12} />
+        </button>
+      </div>
       {children}
-    </FloatingWindow>
+    </section>
   )
 }
 

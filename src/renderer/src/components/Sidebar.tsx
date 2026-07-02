@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Plus, Send, Trash2 } from 'lucide-react'
 import type { Playlist } from '../../../preload'
 import { useLibrary } from '../stores/library'
+import { ShareDialog } from './ShareDialog'
+import type { Attachment } from '../lib/attachments'
 
 // foobar2000's left pane is a tree: a heading per group, expandable, plain
 // rows below. Approximating that without the actual album/artist tree (we
@@ -15,10 +17,56 @@ export function Sidebar(): React.JSX.Element {
   const [newName, setNewName] = useState('')
   const [openLib, setOpenLib] = useState(true)
   const [openPl, setOpenPl] = useState(true)
+  const [menu, setMenu] = useState<{ x: number; y: number; playlist: Playlist } | null>(null)
+  const [share, setShare] = useState<Attachment | null>(null)
 
   useEffect(() => {
     window.api.listPlaylists().then(setPlaylists)
   }, [version])
+
+  useEffect(() => {
+    if (!menu) return
+    const close = (): void => setMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [menu])
+
+  async function sharePlaylist(p: Playlist): Promise<void> {
+    setMenu(null)
+    const tracks = await window.api.listPlaylistTracks(p.id)
+    const covers = tracks
+      .map((t) => t.thumbnailUrl)
+      .filter((u): u is string => !!u)
+      .slice(0, 4)
+    setShare({
+      kind: 'playlist',
+      playlist: {
+        name: p.name,
+        trackCount: tracks.length,
+        covers,
+        tracks: tracks.slice(0, 3).map((t) => ({
+          title: t.title,
+          artist: t.artist,
+          sourceUrl: t.sourceUrl,
+          service: t.service,
+          thumbnail: t.thumbnailUrl,
+          durationSec: t.durationMs ? t.durationMs / 1000 : null
+        }))
+      }
+    })
+  }
+
+  async function deletePlaylist(p: Playlist): Promise<void> {
+    setMenu(null)
+    if (!confirm(`Delete playlist "${p.name}"? Tracks stay in your library.`)) return
+    await window.api.deletePlaylist(p.id)
+    if (view.kind === 'playlist' && view.id === p.id) setView({ kind: 'library' })
+    bump()
+  }
 
   async function createNew(): Promise<void> {
     const name = newName.trim()
@@ -100,10 +148,39 @@ export function Sidebar(): React.JSX.Element {
             count={p.trackCount}
             active={view.kind === 'playlist' && view.id === p.id}
             onClick={() => setView({ kind: 'playlist', id: p.id })}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setMenu({ x: e.clientX, y: e.clientY, playlist: p })
+            }}
           />
         ))}
       </TreeGroup>
 
+      {menu && (
+        <div
+          className="fixed z-50 min-w-[180px] border border-[var(--color-border-strong)] bg-[var(--color-shell)] py-1 text-[12px] shadow-2xl"
+          style={{ left: menu.x, top: menu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => void sharePlaylist(menu.playlist)}
+            className="flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)]"
+          >
+            <Send size={11} />
+            Share…
+          </button>
+          <div className="my-1 border-t border-[var(--color-border)]" />
+          <button
+            onClick={() => void deletePlaylist(menu.playlist)}
+            className="flex w-full items-center gap-2 px-3 py-1 text-left text-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
+          >
+            <Trash2 size={11} />
+            Delete playlist
+          </button>
+        </div>
+      )}
+
+      {share && <ShareDialog attachment={share} onClose={() => setShare(null)} />}
     </aside>
   )
 }
@@ -142,16 +219,19 @@ function TreeRow({
   label,
   count,
   active,
-  onClick
+  onClick,
+  onContextMenu
 }: {
   label: string
   count?: number
   active: boolean
   onClick: () => void
+  onContextMenu?: (e: React.MouseEvent) => void
 }): React.JSX.Element {
   return (
     <button
       onClick={onClick}
+      onContextMenu={onContextMenu}
       className={`flex w-full items-center justify-between px-6 py-0.5 text-left ${
         active
           ? 'bg-[var(--color-row-current)] text-[var(--color-row-current-fg)]'

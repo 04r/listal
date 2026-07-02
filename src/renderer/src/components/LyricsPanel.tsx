@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { Loader2, Mic2 } from 'lucide-react'
+import { Loader2, Mic2, PictureInPicture2, PictureInPicture, X } from 'lucide-react'
 import { usePlayer } from '../stores/player'
 import { useLyrics } from '../stores/lyrics'
 import { FloatingWindow } from './FloatingWindow'
+import { usePanelMode } from '../stores/panelMode'
 
 interface Props {
   onClose: () => void
@@ -22,19 +23,17 @@ export function LyricsPanel({ onClose }: Props): React.JSX.Element {
   const positionSec = usePlayer((s) => s.positionSec)
   const durationSec = usePlayer((s) => s.durationSec)
   const seekTo = usePlayer((s) => s.seekTo)
+  const mode = usePanelMode((s) => s.modes.lyrics)
+  const setMode = usePanelMode((s) => s.set)
 
-  // Fetching happens in App.tsx on track change; we just render.
   const lyrics = useLyrics((s) => s.data)
   const loading = useLyrics((s) => s.loading)
   const error = useLyrics((s) => s.error)
 
-  // Find the index of the line that should currently be highlighted.
   const synced = lyrics?.synced ?? null
   const positionMs = Math.round(positionSec * 1000)
   const activeIndex = useMemo(() => {
     if (!synced || synced.length === 0) return -1
-    // Last line whose start <= position. Simple linear scan; lyrics rarely
-    // exceed a few hundred lines.
     let idx = -1
     for (let i = 0; i < synced.length; i++) {
       if (synced[i].tMs <= positionMs) idx = i
@@ -43,7 +42,6 @@ export function LyricsPanel({ onClose }: Props): React.JSX.Element {
     return idx
   }, [synced, positionMs])
 
-  // Auto-scroll the active line into view.
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const lineRefs = useRef<Array<HTMLDivElement | null>>([])
   useEffect(() => {
@@ -54,29 +52,12 @@ export function LyricsPanel({ onClose }: Props): React.JSX.Element {
     }
   }, [activeIndex])
 
-  return (
-    <FloatingWindow
-      name="lyrics"
-      defaultRect={{ x: Math.max(60, window.innerWidth - 420), y: 100, w: 360, h: 480 }}
-      minW={240}
-      minH={220}
-      onClose={onClose}
-      title={
-        <>
-          <Mic2 size={11} />
-          <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
-            Lyrics
-          </span>
-          {lyrics?.source && (
-            <span className="truncate text-[var(--color-text-dim)]">
-              via {SOURCE_LABEL[lyrics.source]}
-              {lyrics.synced ? ' · synced' : ' · plain'}
-            </span>
-          )}
-        </>
-      }
-    >
-      <div ref={scrollRef} className="flex h-full flex-col overflow-y-auto px-4 py-6 text-[14px] leading-snug">
+  const body = (
+    <>
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 text-[14px] leading-snug"
+      >
         {!track && (
           <div className="text-[11px] text-[var(--color-text-muted)]">
             Pick a track to see lyrics.
@@ -98,12 +79,10 @@ export function LyricsPanel({ onClose }: Props): React.JSX.Element {
         )}
         {track && !loading && lyrics && !lyrics.found && (
           <div className="text-[11px] text-[var(--color-text-muted)]">
-            No lyrics found across LRCLIB, NetEase, QQ Music, Kugou, Genius, or lyrics.ovh for{' '}
+            No lyrics found for{' '}
             <span className="text-[var(--color-text)]">{track.title}</span>.
           </div>
         )}
-
-        {/* Synced — Spotify-style, click to seek */}
         {synced && synced.length > 0 && (
           <div className="space-y-2.5">
             {synced.map((line, i) => {
@@ -131,22 +110,86 @@ export function LyricsPanel({ onClose }: Props): React.JSX.Element {
             })}
           </div>
         )}
-
-        {/* Plain only */}
         {!synced && lyrics?.plain && (
           <pre className="whitespace-pre-wrap font-sans text-[13px] text-[var(--color-text)]">
             {lyrics.plain}
           </pre>
         )}
       </div>
-
       {synced && track && durationSec > 0 && (
-        <div className="flex h-6 items-center justify-between border-t border-[var(--color-border)] bg-[var(--grad-header-strong)] px-2 text-[10.5px] text-[var(--color-text-muted)]">
+        <div className="flex h-6 shrink-0 items-center justify-between border-t border-[var(--color-border)] bg-[var(--grad-header-strong)] px-2 text-[10.5px] text-[var(--color-text-muted)]">
           <span>{synced.length} lines</span>
-          <span>{lyrics?.trackName ?? track.title}</span>
+          <span className="truncate">{lyrics?.trackName ?? track.title}</span>
         </div>
       )}
-    </FloatingWindow>
+    </>
+  )
+
+  const titleContent = (
+    <>
+      <Mic2 size={11} />
+      <span className="font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+        Lyrics
+      </span>
+      {lyrics?.source && (
+        <span className="truncate text-[var(--color-text-dim)]">
+          via {SOURCE_LABEL[lyrics.source]}
+          {lyrics.synced ? ' · synced' : ' · plain'}
+        </span>
+      )}
+    </>
+  )
+
+  if (mode === 'float') {
+    return (
+      <FloatingWindow
+        name="lyrics"
+        defaultRect={{ x: Math.max(60, window.innerWidth - 420), y: 100, w: 360, h: 480 }}
+        minW={240}
+        minH={220}
+        onClose={onClose}
+        title={
+          <>
+            {titleContent}
+            <button
+              data-nodrag
+              onClick={() => setMode('lyrics', 'dock')}
+              title="Dock"
+              className="ml-auto mr-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+            >
+              <PictureInPicture2 size={12} />
+            </button>
+          </>
+        }
+      >
+        <div className="flex h-full flex-col">{body}</div>
+      </FloatingWindow>
+    )
+  }
+
+  // Docked — rendered inline in the main content column. Height driven from
+  // the panelMode store so drag-resizing from App.tsx sticks.
+  return (
+    <section className="flex h-full flex-col border-t border-[var(--color-border-strong)] bg-[var(--color-shell)]">
+      <div className="flex h-7 shrink-0 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 text-[11px]">
+        {titleContent}
+        <button
+          onClick={() => setMode('lyrics', 'float')}
+          title="Pop out"
+          className="ml-auto text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+        >
+          <PictureInPicture size={12} />
+        </button>
+        <button
+          onClick={onClose}
+          title="Close"
+          className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+        >
+          <X size={12} />
+        </button>
+      </div>
+      {body}
+    </section>
   )
 }
 
