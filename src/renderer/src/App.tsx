@@ -22,6 +22,8 @@ import { SettingsDialog } from './components/SettingsDialog'
 import { TransportZone } from './components/TransportZone'
 import { ChatPanel } from './components/ChatPanel'
 import { AddTrackDialog } from './components/AddTrackDialog'
+import { ToastLayer } from './components/Toast'
+import { AudioSettingsPanel } from './components/AudioSettingsPanel'
 import { useLibrary } from './stores/library'
 import { useAuth } from './stores/auth'
 import { useSocial } from './stores/social'
@@ -42,6 +44,7 @@ function App(): React.JSX.Element {
   const [queueOpen, setQueueOpen] = useState(false)
   const [roomsOpen, setRoomsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [audioOpen, setAudioOpen] = useState(false)
   const theme = useSettings((s) => s.theme)
   const accent = useSettings((s) => s.accent)
   const panelSides = useSettings((s) => s.panelSides)
@@ -162,6 +165,8 @@ function App(): React.JSX.Element {
     window.addEventListener('listal:toggle-rooms', rm)
     window.addEventListener('listal:open-settings', st)
     window.addEventListener('listal:open-profile', prof)
+    const ao = (): void => setAudioOpen((v) => !v)
+    window.addEventListener('listal:toggle-audio', ao)
     return () => {
       window.removeEventListener('listal:toggle-lyrics', lyr)
       window.removeEventListener('listal:toggle-friends', fr)
@@ -170,6 +175,7 @@ function App(): React.JSX.Element {
       window.removeEventListener('listal:toggle-rooms', rm)
       window.removeEventListener('listal:open-settings', st)
       window.removeEventListener('listal:open-profile', prof)
+      window.removeEventListener('listal:toggle-audio', ao)
     }
   }, [profile, convoySession, friendsOpen, convoyOpen, queueOpen, roomsOpen])
 
@@ -295,6 +301,8 @@ function App(): React.JSX.Element {
         />
       )}
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+      {audioOpen && <AudioSettingsPanel onClose={() => setAudioOpen(false)} />}
+      <ToastLayer />
     </div>
   )
 }

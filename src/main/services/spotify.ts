@@ -166,11 +166,11 @@ export function connect(): Promise<void> {
     })
 
     // Watchdog — if the user closes the browser without responding, free the
-    // port after 5 minutes so they can try again.
+    // port after 2.5 minutes so they can try again.
     setTimeout(() => {
       server.close()
-      rejectP(new Error('Spotify auth timed out (5 min). Try Connect again.'))
-    }, 5 * 60 * 1000).unref()
+      rejectP(new Error('Spotify auth timed out (2.5 min). Try Connect again.'))
+    }, 2.5 * 60 * 1000).unref()
   }).finally(() => {
     inflight = null
   })

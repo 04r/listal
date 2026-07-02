@@ -32,9 +32,16 @@ export interface SharedPlaylist {
   tracks: SharedPlaylistTrack[] // first ~3 for the preview list
 }
 
+export interface ConvoyInvite {
+  code: string
+  name: string | null
+  hostUsername: string
+}
+
 export type Attachment =
   | { kind: 'song'; song: SharedSong }
   | { kind: 'playlist'; playlist: SharedPlaylist }
+  | { kind: 'convoy_invite'; invite: ConvoyInvite }
 
 export function encodeAttachment(a: Attachment): string {
   return MARKER + JSON.stringify(a)
@@ -46,6 +53,7 @@ export function decodeAttachment(body: string): Attachment | null {
     const parsed = JSON.parse(body.slice(MARKER.length)) as Attachment
     if (parsed.kind === 'song' && parsed.song?.sourceUrl) return parsed
     if (parsed.kind === 'playlist' && parsed.playlist?.name) return parsed
+    if (parsed.kind === 'convoy_invite' && parsed.invite?.code) return parsed
     return null
   } catch {
     return null

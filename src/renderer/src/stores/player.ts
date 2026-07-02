@@ -3,6 +3,7 @@ import Hls from 'hls.js'
 import type { Track } from '../../../preload'
 import { useSocial, type NowPlayingTrack } from './social'
 import { useConvoy, queueItemToTrack } from './convoy'
+import { attachAudio } from '../lib/audioGraph'
 
 export type RepeatMode = 'off' | 'all' | 'one'
 
@@ -95,8 +96,14 @@ export const usePlayer = create<PlayerState>((set, get) => {
 
     const a = new Audio()
     a.preload = 'auto'
+    a.crossOrigin = 'anonymous'
     a.volume = get().volume
     audio = a
+    try {
+      attachAudio(a)
+    } catch (e) {
+      console.warn('[player] failed to attach audio graph', e)
+    }
 
     a.addEventListener('loadedmetadata', () => {
       if (Number.isFinite(a.duration)) set({ durationSec: a.duration })

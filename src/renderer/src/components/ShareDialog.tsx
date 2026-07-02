@@ -66,7 +66,9 @@ export function ShareDialog({ attachment, onClose }: Props): React.JSX.Element {
   const summary =
     attachment.kind === 'song'
       ? `Song · ${attachment.song.title}`
-      : `Playlist · ${attachment.playlist.name}`
+      : attachment.kind === 'playlist'
+        ? `Playlist · ${attachment.playlist.name}`
+        : `Convoy invite · ${attachment.invite.code}`
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40" onClick={onClose}>

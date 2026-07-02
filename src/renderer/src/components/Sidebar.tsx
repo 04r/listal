@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
-import type { Playlist, SpotifyStatus } from '../../../preload'
+import type { Playlist } from '../../../preload'
 import { useLibrary } from '../stores/library'
 
 // foobar2000's left pane is a tree: a heading per group, expandable, plain
 // rows below. Approximating that without the actual album/artist tree (we
-// don't yet have a local-file model) — show Library, Playlists, Spotify.
+// don't yet have a local-file model) — show Library and Playlists.
+// Service auth (Spotify etc.) lives in the menubar's Account → Services
+// submenu.
 export function Sidebar(): React.JSX.Element {
   const { view, setView, version, bump } = useLibrary()
   const [playlists, setPlaylists] = useState<Playlist[]>([])
@@ -13,18 +15,10 @@ export function Sidebar(): React.JSX.Element {
   const [newName, setNewName] = useState('')
   const [openLib, setOpenLib] = useState(true)
   const [openPl, setOpenPl] = useState(true)
-  const [openSp, setOpenSp] = useState(true)
-  const [spotify, setSpotify] = useState<SpotifyStatus | null>(null)
-  const [spotifyBusy, setSpotifyBusy] = useState(false)
-  const [spotifyError, setSpotifyError] = useState<string | null>(null)
 
   useEffect(() => {
     window.api.listPlaylists().then(setPlaylists)
   }, [version])
-
-  useEffect(() => {
-    window.api.spotifyStatus().then(setSpotify)
-  }, [])
 
   async function createNew(): Promise<void> {
     const name = newName.trim()
@@ -37,29 +31,6 @@ export function Sidebar(): React.JSX.Element {
     setCreating(false)
     bump()
     setView({ kind: 'playlist', id: p.id })
-  }
-
-  async function toggleSpotify(): Promise<void> {
-    if (!spotify) return
-    setSpotifyError(null)
-    if (spotify.connected) {
-      await window.api.spotifyDisconnect()
-      setSpotify({ ...spotify, connected: false })
-      return
-    }
-    if (!spotify.configured) {
-      setSpotifyError('SPOTIFY_CLIENT_ID not set.')
-      return
-    }
-    setSpotifyBusy(true)
-    const res = await window.api.spotifyConnect()
-    setSpotifyBusy(false)
-    if (res.ok) {
-      const status = await window.api.spotifyStatus()
-      setSpotify(status)
-    } else {
-      setSpotifyError(res.error)
-    }
   }
 
   return (
@@ -133,32 +104,6 @@ export function Sidebar(): React.JSX.Element {
         ))}
       </TreeGroup>
 
-      <TreeGroup
-        label="Services"
-        open={openSp}
-        onToggle={() => setOpenSp((o) => !o)}
-      >
-        <button
-          onClick={() => void toggleSpotify()}
-          disabled={spotifyBusy}
-          className="flex w-full items-center justify-between px-6 py-0.5 text-left text-[12px] text-[var(--color-text)] hover:bg-[var(--color-surface-3)]"
-          title={spotifyError ?? ''}
-        >
-          <span>Spotify</span>
-          <span
-            className={`text-[10px] ${
-              spotify?.connected ? 'text-green-700' : 'text-[var(--color-text-dim)]'
-            }`}
-          >
-            {spotifyBusy ? '…' : spotify?.connected ? 'connected' : 'connect'}
-          </span>
-        </button>
-        {spotifyError && (
-          <div className="px-6 py-0.5 text-[10px] text-[var(--color-danger)]">
-            {spotifyError}
-          </div>
-        )}
-      </TreeGroup>
     </aside>
   )
 }

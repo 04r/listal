@@ -11,7 +11,7 @@ const NO_MESSAGES: RoomMessage[] = []
 import { useAuth } from '../stores/auth'
 import { useLibrary } from '../stores/library'
 import { decodeAttachment } from '../lib/attachments'
-import { SharedSongCard, SharedPlaylistCard } from './SharedCards'
+import { SharedSongCard, SharedPlaylistCard, SharedConvoyInviteCard } from './SharedCards'
 
 interface Props {
   roomId: string
@@ -183,6 +183,7 @@ function MessageBody({ body }: { body: string }): React.JSX.Element {
   const attach = decodeAttachment(body)
   if (attach?.kind === 'song') return <SharedSongCard song={attach.song} />
   if (attach?.kind === 'playlist') return <SharedPlaylistCard playlist={attach.playlist} />
+  if (attach?.kind === 'convoy_invite') return <SharedConvoyInviteCard invite={attach.invite} />
   return (
     <div className="whitespace-pre-wrap break-words text-[12px] text-[var(--color-text)]">
       {body}

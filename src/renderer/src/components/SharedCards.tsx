@@ -1,9 +1,10 @@
-import { Play, Plus, Music, MoreHorizontal, Loader2 } from 'lucide-react'
+import { Play, Plus, Music, MoreHorizontal, Loader2, Radio } from 'lucide-react'
 import { useState } from 'react'
-import type { SharedSong, SharedPlaylist } from '../lib/attachments'
+import type { SharedSong, SharedPlaylist, ConvoyInvite } from '../lib/attachments'
 import type { Track } from '../../../preload'
 import { usePlayer } from '../stores/player'
 import { useLibrary } from '../stores/library'
+import { useConvoy } from '../stores/convoy'
 
 // A shared song card. Cover + title + artist, Play and Add-to-library buttons.
 // Sits inside a chat message bubble.
@@ -247,6 +248,66 @@ function Mosaic({ covers }: { covers: string[] }): React.JSX.Element {
           onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')}
         />
       ))}
+    </div>
+  )
+}
+
+// Invite card for a Convoy. Shows the code, host, and a Join button
+// bottom-right. Clicking Join runs the same joinByCode path as pasting.
+export function SharedConvoyInviteCard({
+  invite
+}: {
+  invite: ConvoyInvite
+}): React.JSX.Element {
+  const [joining, setJoining] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'joined' | 'error'>('idle')
+  const [err, setErr] = useState<string | null>(null)
+  async function join(): Promise<void> {
+    setJoining(true)
+    setErr(null)
+    const res = await useConvoy.getState().joinByCode(invite.code)
+    setJoining(false)
+    if (res.ok) setStatus('joined')
+    else {
+      setStatus('error')
+      setErr(res.error)
+    }
+  }
+  return (
+    <div className="w-[260px] border border-[var(--color-border-strong)] bg-[var(--color-shell)]">
+      <div className="flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--grad-header)] px-2 py-1 text-[10px] uppercase tracking-wider text-[var(--color-text-muted)]">
+        <Radio size={11} />
+        Convoy invite
+      </div>
+      <div className="p-2 text-[12px]">
+        <div className="mb-1 truncate font-semibold text-[var(--color-text)]">
+          {invite.name ?? `Convoy by @${invite.hostUsername}`}
+        </div>
+        <div className="text-[10.5px] text-[var(--color-text-muted)]">
+          From @{invite.hostUsername}
+        </div>
+        <div className="mt-1 select-all border border-[var(--color-border)] bg-[var(--color-input)] px-2 py-1 text-center font-mono text-[12px] tracking-widest">
+          {invite.code}
+        </div>
+        {err && (
+          <div className="mt-1 text-[10.5px] text-[var(--color-danger)]">{err}</div>
+        )}
+      </div>
+      <div className="flex justify-end border-t border-[var(--color-border)] px-2 py-1">
+        <button
+          onClick={() => void join()}
+          disabled={joining || status === 'joined'}
+          className="flex items-center gap-1 border border-[var(--color-border-strong)] bg-[var(--grad-primary)] px-3 py-0.5 text-[11.5px] font-semibold text-white hover:bg-[var(--grad-primary-hover)] disabled:opacity-60"
+        >
+          {joining ? (
+            <Loader2 size={11} className="animate-spin" />
+          ) : status === 'joined' ? (
+            'Joined'
+          ) : (
+            'Join'
+          )}
+        </button>
+      </div>
     </div>
   )
 }

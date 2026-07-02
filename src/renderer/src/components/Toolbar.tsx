@@ -53,6 +53,36 @@ function Menubar({ onOpenAuth }: { onOpenAuth: () => void }): React.JSX.Element 
   const setView = useLibrary((s) => s.setView)
   const bump = useLibrary((s) => s.bump)
 
+  // Spotify connection status for the Account → Services submenu.
+  const [spotifyConnected, setSpotifyConnected] = useState<boolean | null>(null)
+  const [spotifyBusy, setSpotifyBusy] = useState(false)
+  useEffect(() => {
+    void window.api.spotifyStatus().then((s) => setSpotifyConnected(s.connected))
+  }, [profile?.id])
+
+  async function toggleSpotify(): Promise<void> {
+    if (spotifyBusy) return
+    setSpotifyBusy(true)
+    if (spotifyConnected) {
+      await window.api.spotifyDisconnect()
+      setSpotifyConnected(false)
+    } else {
+      const res = await window.api.spotifyConnect()
+      if (res.ok) {
+        const s = await window.api.spotifyStatus()
+        setSpotifyConnected(s.connected)
+      } else {
+        // Show the error briefly then auto-dismiss.
+        window.dispatchEvent(
+          new CustomEvent('listal:toast', {
+            detail: { message: res.error, ttlMs: 6000, kind: 'error' }
+          })
+        )
+      }
+    }
+    setSpotifyBusy(false)
+  }
+
   // Player actions
   const togglePlay = usePlayer((s) => s.toggle)
   const nextTrack = usePlayer((s) => s.next)
@@ -137,7 +167,12 @@ function Menubar({ onOpenAuth }: { onOpenAuth: () => void }): React.JSX.Element 
       { label: 'Previous', shortcut: 'Ctrl+←', onClick: () => void prevTrack() },
       { label: 'Next', shortcut: 'Ctrl+→', onClick: () => void nextTrack() },
       { type: 'separator' },
-      { label: 'Mute / unmute', shortcut: 'M', onClick: toggleMute }
+      { label: 'Mute / unmute', shortcut: 'M', onClick: toggleMute },
+      { type: 'separator' },
+      {
+        label: 'Audio (EQ, reverb…)',
+        onClick: () => window.dispatchEvent(new CustomEvent('listal:toggle-audio'))
+      }
     ],
     Library: [
       { label: 'All tracks', onClick: () => setView({ kind: 'library' }) },
@@ -172,6 +207,47 @@ function Menubar({ onOpenAuth }: { onOpenAuth: () => void }): React.JSX.Element 
             label: 'Friends',
             shortcut: 'Ctrl+F',
             onClick: () => window.dispatchEvent(new CustomEvent('listal:toggle-friends'))
+          },
+          {
+            type: 'submenu',
+            label: 'Services',
+            items: [
+              {
+                label: spotifyBusy
+                  ? 'Spotify: …'
+                  : spotifyConnected
+                    ? 'Spotify: disconnect'
+                    : 'Spotify: connect',
+                onClick: () => void toggleSpotify()
+              },
+              {
+                label: 'YouTube: coming soon',
+                onClick: () =>
+                  window.dispatchEvent(
+                    new CustomEvent('listal:toast', {
+                      detail: { message: 'YouTube auth not wired yet.', ttlMs: 3500 }
+                    })
+                  )
+              },
+              {
+                label: 'SoundCloud: coming soon',
+                onClick: () =>
+                  window.dispatchEvent(
+                    new CustomEvent('listal:toast', {
+                      detail: { message: 'SoundCloud auth not wired yet.', ttlMs: 3500 }
+                    })
+                  )
+              },
+              {
+                label: 'Bandcamp: coming soon',
+                onClick: () =>
+                  window.dispatchEvent(
+                    new CustomEvent('listal:toast', {
+                      detail: { message: 'Bandcamp auth not wired yet.', ttlMs: 3500 }
+                    })
+                  )
+              }
+            ]
           },
           { type: 'separator' },
           { label: 'Sign out', onClick: () => void signOut(), danger: true }
@@ -251,6 +327,7 @@ type MenuItem =
       danger?: boolean
     }
   | { type: 'separator' }
+  | { type: 'submenu'; label: string; items: MenuItem[] }
 
 function MenuButton({
   label,
@@ -297,33 +374,71 @@ function MenuButton({
       {open && (
         <>
           <div className="absolute left-0 top-full z-40 min-w-[200px] border border-[var(--color-border-strong)] bg-[var(--color-shell)] py-1 shadow-2xl">
-            {items.map((item, i) => {
-              if (item.type === 'separator')
-                return <div key={i} className="my-1 border-t border-[var(--color-border)]" />
-              return (
-                <button
-                  key={i}
-                  onClick={() => {
-                    item.onClick()
-                    onClose()
-                  }}
-                  className={`flex w-full items-center justify-between px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)] ${
-                    item.danger ? 'text-[var(--color-danger)]' : ''
-                  }`}
-                >
-                  <span>{item.label}</span>
-                  {item.shortcut && (
-                    <span className="ml-6 text-[10.5px] text-[var(--color-text-dim)]">
-                      {item.shortcut}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
+            {items.map((item, i) => (
+              <MenuRow key={i} item={item} onClose={onClose} />
+            ))}
           </div>
         </>
       )}
     </span>
+  )
+}
+
+function MenuRow({
+  item,
+  onClose
+}: {
+  item: MenuItem
+  onClose: () => void
+}): React.JSX.Element {
+  const [hovered, setHovered] = useState(false)
+  if (item.type === 'separator') {
+    return <div className="my-1 border-t border-[var(--color-border)]" />
+  }
+  if (item.type === 'submenu') {
+    return (
+      <div
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        className="relative"
+      >
+        <button
+          className={`flex w-full items-center justify-between px-3 py-1 text-left ${
+            hovered
+              ? 'bg-[var(--color-row-current)] text-[var(--color-row-current-fg)]'
+              : ''
+          }`}
+        >
+          <span>{item.label}</span>
+          <span className="ml-6 text-[10px] opacity-70">▸</span>
+        </button>
+        {hovered && (
+          <div className="absolute left-full top-0 min-w-[200px] border border-[var(--color-border-strong)] bg-[var(--color-shell)] py-1 shadow-2xl">
+            {item.items.map((sub, si) => (
+              <MenuRow key={si} item={sub} onClose={onClose} />
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+  return (
+    <button
+      onClick={() => {
+        item.onClick()
+        onClose()
+      }}
+      className={`flex w-full items-center justify-between px-3 py-1 text-left hover:bg-[var(--color-row-current)] hover:text-[var(--color-row-current-fg)] ${
+        item.danger ? 'text-[var(--color-danger)]' : ''
+      }`}
+    >
+      <span>{item.label}</span>
+      {item.shortcut && (
+        <span className="ml-6 text-[10.5px] text-[var(--color-text-dim)]">
+          {item.shortcut}
+        </span>
+      )}
+    </button>
   )
 }
 
@@ -374,12 +489,18 @@ function SearchRow(): React.JSX.Element {
 
 const SEARCH_EVT = 'zp:search-query'
 
+// Remembered outside React so remounts of SearchView pick up whatever's still
+// in the top-bar input — without this, navigating away from Search and back
+// leaves the results empty until you retype.
+let latestQuery = ''
+
 function dispatchSearchQuery(q: string): void {
+  latestQuery = q
   window.dispatchEvent(new CustomEvent<string>(SEARCH_EVT, { detail: q }))
 }
 
 export function useSearchQuery(initial = ''): [string, (v: string) => void] {
-  const [q, setQ] = useState(initial)
+  const [q, setQ] = useState(latestQuery || initial)
   useEffect(() => {
     const handler = (e: Event): void => {
       setQ((e as CustomEvent<string>).detail)

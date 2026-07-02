@@ -4,6 +4,8 @@ import { useConvoy } from '../stores/convoy'
 import { useFriends } from '../stores/friends'
 import { useAuth } from '../stores/auth'
 import { FloatingWindow } from './FloatingWindow'
+import { encodeAttachment } from '../lib/attachments'
+import { supabase } from '../lib/supabase'
 
 interface Props {
   onClose: () => void
@@ -41,8 +43,43 @@ export function ConvoyPanel({ onClose }: Props): React.JSX.Element {
 
   async function invite(userId: string): Promise<void> {
     setInviteBusy(userId)
+    // Two things: (1) upsert them into convoy_participants so they show up
+    // straight away if they're already listening, and (2) send them a chat
+    // message with an invite card so they get an actual notification.
+    const s = useConvoy.getState().session
+    const meProfile = useAuth.getState().profile
+    if (!s || !meProfile) {
+      setInviteBusy(null)
+      return
+    }
     await useConvoy.getState().invite(userId)
+    const encoded = encodeAttachment({
+      kind: 'convoy_invite',
+      invite: {
+        code: s.code,
+        name: s.name,
+        hostUsername: meProfile.username
+      }
+    })
+    const { error } = await supabase.from('messages').insert({
+      from_user: meProfile.id,
+      to_user: userId,
+      body: encoded
+    })
     setInviteBusy(null)
+    if (error) {
+      window.dispatchEvent(
+        new CustomEvent('listal:toast', {
+          detail: { message: `Couldn't send invite: ${error.message}`, kind: 'error', ttlMs: 4000 }
+        })
+      )
+    } else {
+      window.dispatchEvent(
+        new CustomEvent('listal:toast', {
+          detail: { message: `Invite sent`, ttlMs: 2500 }
+        })
+      )
+    }
   }
 
   async function leaveConvoy(): Promise<void> {
@@ -178,11 +215,36 @@ export function ConvoyPanel({ onClose }: Props): React.JSX.Element {
                 )}
                 {session.host_id === me.id && !isHost && (
                   <button
-                    onClick={() =>
-                      void useConvoy.getState().setRole(p.user_id, p.role === 'dj' ? 'guest' : 'dj')
-                    }
+                    onClick={async () => {
+                      const res = await useConvoy
+                        .getState()
+                        .setRole(p.user_id, p.role === 'dj' ? 'guest' : 'dj')
+                      if (!res.ok) {
+                        window.dispatchEvent(
+                          new CustomEvent('listal:toast', {
+                            detail: { message: `Couldn't change role: ${res.error}`, kind: 'error', ttlMs: 4000 }
+                          })
+                        )
+                      } else {
+                        window.dispatchEvent(
+                          new CustomEvent('listal:toast', {
+                            detail: {
+                              message:
+                                p.role === 'dj'
+                                  ? `@${p.profile?.username ?? 'user'} is no longer a DJ`
+                                  : `@${p.profile?.username ?? 'user'} can now instant-skip`,
+                              ttlMs: 3000
+                            }
+                          })
+                        )
+                      }
+                    }}
                     title={p.role === 'dj' ? 'Revoke instant-skip' : 'Grant instant-skip'}
-                    className="grid h-4 w-4 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] hover:bg-[var(--grad-btn-hover)]"
+                    className={
+                      p.role === 'dj'
+                        ? 'grid h-4 w-4 place-items-center border border-white bg-white text-[var(--color-accent)] shadow-[0_0_6px_2px_rgba(255,255,255,0.85)]'
+                        : 'grid h-4 w-4 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] hover:bg-[var(--grad-btn-hover)]'
+                    }
                   >
                     {p.role === 'dj' ? <ShieldCheck size={9} /> : <Shield size={9} />}
                   </button>

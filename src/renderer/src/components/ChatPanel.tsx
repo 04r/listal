@@ -3,7 +3,7 @@ import { X, Send, Loader2 } from 'lucide-react'
 import { useAuth } from '../stores/auth'
 import { useChat } from '../stores/chat'
 import { decodeAttachment } from '../lib/attachments'
-import { SharedSongCard, SharedPlaylistCard } from './SharedCards'
+import { SharedSongCard, SharedPlaylistCard, SharedConvoyInviteCard } from './SharedCards'
 
 export function ChatPanel(): React.JSX.Element | null {
   const peer = useChat((s) => s.peer)
@@ -77,8 +77,10 @@ export function ChatPanel(): React.JSX.Element | null {
                 >
                   {attach.kind === 'song' ? (
                     <SharedSongCard song={attach.song} />
-                  ) : (
+                  ) : attach.kind === 'playlist' ? (
                     <SharedPlaylistCard playlist={attach.playlist} />
+                  ) : (
+                    <SharedConvoyInviteCard invite={attach.invite} />
                   )}
                 </div>
               )

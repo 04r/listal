@@ -87,9 +87,27 @@ export function SearchView(): React.JSX.Element {
     setBusyKey(null)
     if (!res.ok) {
       setError(res.error)
+      window.dispatchEvent(
+        new CustomEvent('listal:toast', {
+          detail: { message: res.error, kind: 'error', ttlMs: 4500 }
+        })
+      )
       return
     }
     bump()
+    // If they picked a specific playlist and the track already existed, the
+    // INSERT OR IGNORE succeeded silently — either way we tell them what
+    // happened so they don't wonder why "nothing happened".
+    const target =
+      playlistId != null ? playlists.find((p) => p.id === playlistId)?.name : null
+    window.dispatchEvent(
+      new CustomEvent('listal:toast', {
+        detail: {
+          message: target ? `Added "${r.title}" to ${target}` : `Added "${r.title}" to library`,
+          ttlMs: 2800
+        }
+      })
+    )
   }
 
   async function playUrl(): Promise<void> {
