@@ -90,9 +90,13 @@ function applyActivity(p: PresenceInput): void {
     state = clip(`${state} · paused`, 128)
   }
 
+  // Music apps put the song title/subject in `name` so Discord's member-list
+  // summary reads "🎧 Listening to <song>" instead of "🎧 Listening to Listal".
+  // Listal itself becomes a footer via the large image tooltip.
+  const nameLine = clip(detailsText.replace(/^[^\p{L}\p{N}]+/u, ''), 128) || 'Music'
   const assets: Record<string, string | undefined> = {
     large_image: 'listal',
-    large_text: p.durationSec ? `Listal · ${fmtTime(p.durationSec)}` : 'Listal',
+    large_text: p.durationSec ? `via Listal · ${fmtTime(p.durationSec)}` : 'via Listal',
     small_image: serviceImage(p.service),
     small_text: serviceLabel(p.service)
   }
@@ -101,6 +105,7 @@ function applyActivity(p: PresenceInput): void {
     // 2 = Listening. Discord uses this for the "Listening to" prefix and the
     // headphones icon in the member list.
     type: 2,
+    name: nameLine,
     details: detailsText,
     state,
     assets,

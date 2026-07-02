@@ -25,6 +25,7 @@ import { AddTrackDialog } from './components/AddTrackDialog'
 import { ToastLayer } from './components/Toast'
 import { AudioSettingsPanel } from './components/AudioSettingsPanel'
 import { AudioVisualizerPanel } from './components/AudioVisualizerPanel'
+import { UserProfileDialog } from './components/UserProfileDialog'
 import { useLibrary } from './stores/library'
 import { useAuth } from './stores/auth'
 import { useSocial } from './stores/social'
@@ -32,6 +33,7 @@ import { useFriends } from './stores/friends'
 import { useConvoy } from './stores/convoy'
 import { useRooms } from './stores/rooms'
 import { useChat } from './stores/chat'
+import { useFollow } from './stores/follow'
 import { startConvoyPlayerSync, stopConvoyPlayerSync } from './stores/convoyPlayerSync'
 import { usePlayer } from './stores/player'
 import { useLyrics } from './stores/lyrics'
@@ -48,6 +50,7 @@ function App(): React.JSX.Element {
   const [roomsOpen, setRoomsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [audioOpen, setAudioOpen] = useState(false)
+  const [viewProfileId, setViewProfileId] = useState<string | null>(null)
   const theme = useSettings((s) => s.theme)
   const accent = useSettings((s) => s.accent)
   const panelSides = useSettings((s) => s.panelSides)
@@ -100,6 +103,7 @@ function App(): React.JSX.Element {
       void useFriends.getState().start(profile.id)
       useConvoy.getState().setMeId(profile.id)
       void useRooms.getState().start(profile.id)
+      void useFollow.getState().start(profile.id)
       startConvoyPlayerSync()
     } else {
       void useSocial.getState().stop()
@@ -107,6 +111,7 @@ function App(): React.JSX.Element {
       void useConvoy.getState().leave()
       useConvoy.getState().setMeId(null)
       void useRooms.getState().stop()
+      useFollow.getState().stop()
       stopConvoyPlayerSync()
     }
   }, [profile?.id])
@@ -185,6 +190,11 @@ function App(): React.JSX.Element {
     window.addEventListener('listal:toggle-audio', ao)
     const vz = (): void => setVizOpen((v) => !v)
     window.addEventListener('listal:toggle-visualizer', vz)
+    const vp = (e: Event): void => {
+      const id = (e as CustomEvent<string>).detail
+      if (typeof id === 'string' && id) setViewProfileId(id)
+    }
+    window.addEventListener('listal:view-profile', vp)
     return () => {
       window.removeEventListener('listal:toggle-lyrics', lyr)
       window.removeEventListener('listal:toggle-friends', fr)
@@ -195,6 +205,7 @@ function App(): React.JSX.Element {
       window.removeEventListener('listal:open-profile', prof)
       window.removeEventListener('listal:toggle-audio', ao)
       window.removeEventListener('listal:toggle-visualizer', vz)
+      window.removeEventListener('listal:view-profile', vp)
     }
   }, [profile, convoySession, friendsOpen, convoyOpen, queueOpen, roomsOpen])
 
@@ -325,6 +336,12 @@ function App(): React.JSX.Element {
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
       {audioOpen && <AudioSettingsPanel onClose={() => setAudioOpen(false)} />}
       {vizOpen && <AudioVisualizerPanel onClose={() => setVizOpen(false)} />}
+      {viewProfileId && (
+        <UserProfileDialog
+          userId={viewProfileId}
+          onClose={() => setViewProfileId(null)}
+        />
+      )}
       {/* Floated panels — PanelShell renders each as a FloatingWindow when
           its stored mode is 'float', so we just always render them here and
           they either fall through as nulls (dock mode) or as floating

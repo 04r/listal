@@ -20,6 +20,7 @@ export function RoomsPanel({ onClose }: Props): React.JSX.Element {
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
+  const [newVisibility, setNewVisibility] = useState<'public' | 'friends' | 'private'>('public')
   const [busy, setBusy] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
@@ -45,7 +46,7 @@ export function RoomsPanel({ onClose }: Props): React.JSX.Element {
     setCreateError(null)
     const res = await useRooms
       .getState()
-      .createRoom(newName, newDesc.trim() || undefined)
+      .createRoom(newName, newDesc.trim() || undefined, newVisibility)
     setBusy(false)
     if (!res.ok) {
       setCreateError(res.error)
@@ -150,6 +151,17 @@ export function RoomsPanel({ onClose }: Props): React.JSX.Element {
               maxLength={140}
               className="h-6 w-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-2 text-[11.5px] outline-none focus:border-[var(--color-accent)]"
             />
+            <select
+              value={newVisibility}
+              onChange={(e) =>
+                setNewVisibility(e.target.value as 'public' | 'friends' | 'private')
+              }
+              className="h-6 w-full border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-1 text-[11.5px]"
+            >
+              <option value="public">Public — anyone can find + join</option>
+              <option value="friends">Friends only — only your friends see it</option>
+              <option value="private">Private — invite only</option>
+            </select>
             {createError && <div className="text-[10.5px] text-[var(--color-danger)]">{createError}</div>}
             <div className="flex justify-end gap-1">
               <button

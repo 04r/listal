@@ -257,19 +257,37 @@ function FriendRow({
   return (
     <div className="flex flex-col border-b border-[var(--color-border)]/40 px-2 py-1 hover:bg-[var(--color-surface-3)]">
       <div className="flex items-center gap-2">
-        <AvatarRing
-          src={profile.avatar_url}
-          size={18}
-          status={status}
-          fallbackChar={profile.username}
-          title={status}
-        />
-        <span className="truncate text-[12px] font-medium text-[var(--color-text)]">
-          {profile.display_name ?? profile.username}
-        </span>
-        <span className="truncate text-[10px] text-[var(--color-text-dim)]">
-          @{profile.username}
-        </span>
+        <button
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent<string>('listal:view-profile', { detail: profile.id })
+            )
+          }
+          title="View profile"
+          className="shrink-0"
+        >
+          <AvatarRing
+            src={profile.avatar_url}
+            size={18}
+            status={status}
+            fallbackChar={profile.username}
+          />
+        </button>
+        <button
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent<string>('listal:view-profile', { detail: profile.id })
+            )
+          }
+          className="min-w-0 flex-1 text-left"
+        >
+          <div className="truncate text-[12px] font-medium text-[var(--color-text)] hover:underline">
+            {profile.display_name ?? profile.username}
+          </div>
+          <div className="truncate text-[10px] text-[var(--color-text-dim)]">
+            @{profile.username}
+          </div>
+        </button>
         <div className="ml-auto flex items-center gap-1">
           <button
             onClick={onChat}

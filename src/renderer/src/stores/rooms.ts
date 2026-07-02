@@ -2,12 +2,15 @@ import { create } from 'zustand'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { supabase, type Profile } from '../lib/supabase'
 
+export type RoomVisibility = 'public' | 'friends' | 'private'
+
 export interface Room {
   id: string
   name: string
   description: string | null
   owner_id: string
   is_public: boolean
+  visibility: RoomVisibility
   created_at: string
   memberCount?: number
 }
@@ -40,7 +43,8 @@ interface RoomsState {
   browsePublic: () => Promise<void>
   createRoom: (
     name: string,
-    description?: string
+    description?: string,
+    visibility?: RoomVisibility
   ) => Promise<{ ok: true; room: Room } | { ok: false; error: string }>
   joinRoom: (roomId: string) => Promise<{ ok: true } | { ok: false; error: string }>
   leaveRoom: (roomId: string) => Promise<void>
@@ -152,27 +156,56 @@ export const useRooms = create<RoomsState>((set, get) => {
     },
 
     browsePublic: async () => {
+      // Fetch rooms whose visibility is 'public' OR 'friends' AND the owner is
+      // one of our accepted friends. RLS on the server (see migration
+      // 002_rooms_visibility.sql) enforces the same rule; the client-side
+      // filter here is a fallback in case RLS is more permissive.
+      const meId = get().meId
       const { data, error } = await supabase
         .from('rooms')
         .select('*')
-        .eq('is_public', true)
         .order('created_at', { ascending: false })
-        .limit(50)
+        .limit(80)
       if (error) {
         set({ error: error.message })
         return
       }
-      set({ browsed: (data ?? []) as Room[] })
+      let friendIds = new Set<string>()
+      if (meId) {
+        const { data: fs } = await supabase
+          .from('friendships')
+          .select('user_a,user_b')
+          .eq('status', 'accepted')
+          .or(`user_a.eq.${meId},user_b.eq.${meId}`)
+        for (const f of fs ?? []) {
+          const row = f as { user_a: string; user_b: string }
+          friendIds.add(row.user_a === meId ? row.user_b : row.user_a)
+        }
+      }
+      const filtered = (data ?? []).filter((r) => {
+        const room = r as Room
+        if (room.visibility === 'public') return true
+        if (room.visibility === 'friends') return friendIds.has(room.owner_id) || room.owner_id === meId
+        // private rooms shouldn't come back from RLS, but if they do we hide.
+        return room.owner_id === meId
+      })
+      set({ browsed: filtered as Room[] })
     },
 
-    createRoom: async (name, description) => {
+    createRoom: async (name, description, visibility = 'public') => {
       const meId = get().meId
       if (!meId) return { ok: false, error: 'Not signed in' }
       const clean = name.trim()
       if (clean.length < 2) return { ok: false, error: 'Room name too short' }
       const { data, error } = await supabase
         .from('rooms')
-        .insert({ name: clean, description: description ?? null, owner_id: meId })
+        .insert({
+          name: clean,
+          description: description ?? null,
+          owner_id: meId,
+          visibility,
+          is_public: visibility === 'public'
+        })
         .select()
         .single()
       if (error) return { ok: false, error: error.message }
