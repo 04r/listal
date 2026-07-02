@@ -1,7 +1,7 @@
 {
   "name": "listal",
   "productName": "Listal",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Listal — one player for songs from every service",
   "main": "./out/main/index.js",
   "author": "example.com",

@@ -194,6 +194,9 @@ export const usePlayer = create<PlayerState>((set, get) => {
     a.addEventListener('loadedmetadata', () => {
       if (Number.isFinite(a.duration)) set({ durationSec: a.duration })
     })
+    // Track whether we've already fired an auto-crossfade for this song so we
+    // don't call next() multiple times on the last frames.
+    let autoAdvancedFor: HTMLAudioElement | null = null
     a.addEventListener('play', () => {
       set({ playing: true, loading: false })
       pushDiscord(track, a.currentTime, true)
@@ -203,6 +206,28 @@ export const usePlayer = create<PlayerState>((set, get) => {
       const tick = (): void => {
         if (!audio) return
         if (!audio.paused) set({ positionSec: audio.currentTime })
+        // Auto-crossfade: when we're within crossfadeSec of the end, jump to
+        // the next track early so the fade actually overlaps. next() calls
+        // loadAndPlay which sees the still-playing element and crossfades.
+        if (audio && audio === a && autoAdvancedFor !== a) {
+          const s2 = get()
+          const cfSec = useSettings.getState().crossfadeSec
+          const dur = s2.durationSec
+          if (
+            cfSec > 0 &&
+            dur > 0 &&
+            !isNaN(a.currentTime) &&
+            dur - a.currentTime <= cfSec &&
+            s2.repeat !== 'one'
+          ) {
+            const hasMore =
+              s2.repeat === 'all' || s2.index + 1 < s2.queue.length
+            if (hasMore) {
+              autoAdvancedFor = a
+              void s2.next()
+            }
+          }
+        }
         rafId = requestAnimationFrame(tick)
       }
       rafId = requestAnimationFrame(tick)

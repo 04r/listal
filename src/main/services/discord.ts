@@ -67,7 +67,10 @@ export async function initDiscord(): Promise<void> {
 function applyActivity(p: PresenceInput): void {
   if (!client || !ready) return
   // Discord activity types: 0 Playing, 2 Listening, 3 Watching, 5 Competing.
-  // The library's types don't yet expose `type` so we cast.
+  // The npm `discord-rpc` package's setActivity() drops any `type` field we
+  // pass, so we bypass it and hit request('SET_ACTIVITY') directly with the
+  // raw activity object. That's the only way to get the "Listening to" prefix
+  // (with headphones icon) instead of "Playing".
   const artistOrSvc = p.artist || serviceLabel(p.service)
   const tokens: Record<string, string> = {
     title: p.title || 'Music',
@@ -77,8 +80,6 @@ function applyActivity(p: PresenceInput): void {
   const detailsTpl = p.detailsTemplate?.trim() || '🎧 {title}'
   const stateTpl = p.stateTemplate?.trim() || '{artist}'
   const detailsText = clip(fillTemplate(detailsTpl, tokens), 128) || 'Music'
-  // When paused, append a "paused" hint after the state so users still see the
-  // song info they configured, but know it isn't playing.
   let state = clip(fillTemplate(stateTpl, tokens), 128) || artistOrSvc
   if (!p.isPlaying && p.durationSec && p.durationSec > 0) {
     state = clip(
@@ -89,34 +90,50 @@ function applyActivity(p: PresenceInput): void {
     state = clip(`${state} · paused`, 128)
   }
 
+  const assets: Record<string, string | undefined> = {
+    large_image: 'listal',
+    large_text: p.durationSec ? `Listal · ${fmtTime(p.durationSec)}` : 'Listal',
+    small_image: serviceImage(p.service),
+    small_text: serviceLabel(p.service)
+  }
+
   const activity: Record<string, unknown> = {
+    // 2 = Listening. Discord uses this for the "Listening to" prefix and the
+    // headphones icon in the member list.
     type: 2,
     details: detailsText,
     state,
-    largeImageKey: 'listal',
-    largeImageText: p.durationSec ? `Listal · ${fmtTime(p.durationSec)}` : 'Listal',
-    smallImageKey: serviceImage(p.service),
-    smallImageText: serviceLabel(p.service),
+    assets,
     instance: false
   }
   if (p.isPlaying && p.durationSec && p.durationSec > 0) {
-    // Anchor the timeline to the moment we sampled the position so Discord's
-    // own clock shows a clean countdown (elapsed bar + remaining time).
     const startMs = p.capturedAtMs - p.positionSec * 1000
     const endMs = startMs + p.durationSec * 1000
-    activity.startTimestamp = Math.floor(startMs / 1000)
-    activity.endTimestamp = Math.floor(endMs / 1000)
+    activity.timestamps = {
+      start: Math.floor(startMs / 1000),
+      end: Math.floor(endMs / 1000)
+    }
   } else if (p.isPlaying) {
-    activity.startTimestamp = Math.floor((p.capturedAtMs - p.positionSec * 1000) / 1000)
+    activity.timestamps = {
+      start: Math.floor((p.capturedAtMs - p.positionSec * 1000) / 1000)
+    }
   }
   if (p.sourceUrl && /^https?:\/\//.test(p.sourceUrl)) {
     activity.buttons = [
       { label: `Listen on ${serviceLabel(p.service)}`, url: p.sourceUrl }
     ]
   }
-  void client.setActivity(activity as RPC.Presence).catch((e) => {
-    console.warn('[discord] setActivity error', (e as Error).message)
-  })
+  const rawClient = client as unknown as {
+    request: (cmd: string, args: unknown) => Promise<unknown>
+  }
+  void rawClient
+    .request('SET_ACTIVITY', {
+      pid: process.pid,
+      activity
+    })
+    .catch((e) => {
+      console.warn('[discord] SET_ACTIVITY error', (e as Error).message)
+    })
 }
 
 function fmtTime(sec: number): string {

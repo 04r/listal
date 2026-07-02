@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Trash2, Pencil, Check, Play, RefreshCw, Plus, Sparkles } from 'lucide-react'
+import { Trash2, Pencil, Check, Play, RefreshCw, Plus, Sparkles, Link as LinkIcon, Loader2 } from 'lucide-react'
 import type { Playlist, SearchResult, Track } from '../../../preload'
 import { useLibrary } from '../stores/library'
 import { usePlayer } from '../stores/player'
@@ -16,7 +16,36 @@ export function PlaylistView({ playlistId }: Props): React.JSX.Element {
   const [tracks, setTracks] = useState<Track[]>([])
   const [editingName, setEditingName] = useState(false)
   const [draftName, setDraftName] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
+  const [importUrl, setImportUrl] = useState('')
+  const [importBusy, setImportBusy] = useState(false)
   const playQueue = usePlayer((s) => s.playQueue)
+
+  async function importFromUrl(): Promise<void> {
+    if (!importUrl.trim() || importBusy) return
+    setImportBusy(true)
+    const res = await window.api.importPlaylistFromUrl(importUrl.trim(), playlistId)
+    setImportBusy(false)
+    if (res.ok) {
+      setImportOpen(false)
+      setImportUrl('')
+      bump()
+      window.dispatchEvent(
+        new CustomEvent('listal:toast', {
+          detail: {
+            message: `Imported ${res.added} tracks${res.skipped > 0 ? ` (${res.skipped} skipped)` : ''}`,
+            ttlMs: 3500
+          }
+        })
+      )
+    } else {
+      window.dispatchEvent(
+        new CustomEvent('listal:toast', {
+          detail: { message: `Import failed: ${res.error}`, kind: 'error', ttlMs: 5000 }
+        })
+      )
+    }
+  }
 
   useEffect(() => {
     void (async () => {
@@ -117,6 +146,13 @@ export function PlaylistView({ playlistId }: Props): React.JSX.Element {
             </button>
           )}
           <button
+            onClick={() => setImportOpen((o) => !o)}
+            className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] text-[var(--color-text)] hover:bg-[var(--grad-btn-hover)]"
+            title="Import from URL"
+          >
+            <LinkIcon size={10} />
+          </button>
+          <button
             onClick={() => void destroy()}
             className="grid h-5 w-5 place-items-center border border-[var(--color-border-strong)] bg-[var(--grad-btn)] text-[var(--color-text)] hover:bg-[var(--grad-btn-hover)]"
             title="Delete playlist"
@@ -125,6 +161,37 @@ export function PlaylistView({ playlistId }: Props): React.JSX.Element {
           </button>
         </div>
       </div>
+
+      {importOpen && (
+        <div className="flex items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-shell)] px-2 py-1.5">
+          <LinkIcon size={11} className="text-[var(--color-text-muted)]" />
+          <input
+            autoFocus
+            value={importUrl}
+            onChange={(e) => setImportUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void importFromUrl()
+              else if (e.key === 'Escape') setImportOpen(false)
+            }}
+            placeholder="Paste a YouTube playlist / SoundCloud set / Bandcamp album URL"
+            className="h-6 flex-1 border border-[var(--color-border-strong)] bg-[var(--color-input)] px-1.5 text-[11.5px] outline-none focus:border-[var(--color-accent)]"
+          />
+          <button
+            onClick={() => void importFromUrl()}
+            disabled={importBusy || !importUrl.trim()}
+            className="flex items-center gap-1 border border-[var(--color-border-strong)] bg-[var(--grad-primary)] px-2 py-0.5 text-[11.5px] font-semibold text-white hover:bg-[var(--grad-primary-hover)] disabled:opacity-40"
+          >
+            {importBusy && <Loader2 size={10} className="animate-spin" />}
+            Import
+          </button>
+          <button
+            onClick={() => setImportOpen(false)}
+            className="border border-[var(--color-border-strong)] bg-[var(--grad-btn)] px-2 py-0.5 text-[11.5px] hover:bg-[var(--grad-btn-hover)]"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {tracks.length === 0 ? (
         <div className="px-3 py-6 text-[11px] text-[var(--color-text-muted)]">
@@ -163,20 +230,39 @@ function Recommendations({
   const [addedUrls, setAddedUrls] = useState<Set<string>>(new Set())
   const bump = useLibrary((s) => s.bump)
 
-  async function fetchFor(seed: Track): Promise<void> {
+  // Fetch song-radio results seeded by a random pick from the playlist tracks
+  // passed in as argument (not the closure) so this stays correct even when
+  // called from an effect that fires before `tracks` has arrived.
+  async function fetchFrom(pool: Track[]): Promise<void> {
+    if (pool.length === 0) return
     setLoading(true)
-    setSeedTitle(seed.title)
+    // Pull suggestions off 2 or 3 seeds so recommendations reflect the whole
+    // playlist rather than one track. Merge, drop anything already in the
+    // playlist, dedupe by sourceUrl, shuffle, take five.
+    const shuffled = [...pool].sort(() => Math.random() - 0.5)
+    const seeds = shuffled.slice(0, Math.min(3, pool.length))
+    setSeedTitle(seeds.map((s) => s.title).join(', '))
     try {
-      const all = await window.api.songRadio(seed.sourceUrl)
-      // Drop tracks already in the playlist and pick a random 5 from what's left.
-      const already = new Set(tracks.map((t) => t.sourceUrl))
-      const filtered = all.filter((r) => !already.has(r.sourceUrl))
-      // Fisher-Yates on a copy so refresh feels varied.
-      for (let i = filtered.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1))
-        ;[filtered[i], filtered[j]] = [filtered[j], filtered[i]]
+      const settled = await Promise.allSettled(
+        seeds.map((s) => window.api.songRadio(s.sourceUrl))
+      )
+      const already = new Set(pool.map((t) => t.sourceUrl))
+      const seen = new Set<string>()
+      const merged: SearchResult[] = []
+      for (const r of settled) {
+        if (r.status !== 'fulfilled') continue
+        for (const item of r.value) {
+          if (already.has(item.sourceUrl) || seen.has(item.sourceUrl)) continue
+          seen.add(item.sourceUrl)
+          merged.push(item)
+        }
       }
-      setRecs(filtered.slice(0, 5))
+      // Fisher-Yates so refresh varies the picks.
+      for (let i = merged.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[merged[i], merged[j]] = [merged[j], merged[i]]
+      }
+      setRecs(merged.slice(0, 5))
     } catch {
       setRecs([])
     } finally {
@@ -185,15 +271,19 @@ function Recommendations({
   }
 
   function refresh(): void {
-    if (tracks.length === 0) return
-    const seed = tracks[Math.floor(Math.random() * tracks.length)]
-    void fetchFor(seed)
+    void fetchFrom(tracks)
   }
 
+  // Fire whenever the playlist ID changes AND once tracks arrive from the
+  // fetch. The old code only fired on playlist swap and lost the first render
+  // because `tracks` was still empty at that moment.
+  const trackCount = tracks.length
   useEffect(() => {
-    refresh()
+    if (trackCount > 0 && recs.length === 0) {
+      void fetchFrom(tracks)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playlistId])
+  }, [playlistId, trackCount])
 
   async function add(r: SearchResult): Promise<void> {
     const res = await window.api.addTrackFromUrl(r.sourceUrl, playlistId)

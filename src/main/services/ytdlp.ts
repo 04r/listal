@@ -395,6 +395,100 @@ function runSearch(
 }
 
 // ---------------------------------------------------------------------------
+// Playlist / album URL import
+// ---------------------------------------------------------------------------
+
+// Walks a playlist URL and returns flat metadata for each item — no stream
+// URLs are resolved yet. Works for YouTube playlists, SoundCloud sets, and
+// Bandcamp albums since yt-dlp exposes the same --flat-playlist interface for
+// all three.
+export interface PlaylistItem {
+  service: string
+  sourceUrl: string
+  title: string
+  uploader: string | null
+  durationSec: number | null
+  thumbnail: string | null
+}
+
+export function resolvePlaylistUrl(url: string): Promise<PlaylistItem[]> {
+  const bin = ytdlpPath()
+  if (!existsSync(bin) || !/^https?:\/\//.test(url)) return Promise.resolve([])
+  return new Promise((resolveP) => {
+    const proc = spawn(
+      bin,
+      [
+        '--flat-playlist',
+        '--no-warnings',
+        '--print',
+        '%(.{id,webpage_url,url,title,uploader,duration,thumbnails,extractor_key,ie_key})j',
+        url
+      ],
+      { windowsHide: true }
+    )
+    let stdout = ''
+    let stderr = ''
+    proc.stdout.on('data', (c) => (stdout += c.toString()))
+    proc.stderr.on('data', (c) => (stderr += c.toString()))
+    const kill = setTimeout(() => proc.kill('SIGKILL'), 60_000)
+    proc.on('error', () => {
+      clearTimeout(kill)
+      resolveP([])
+    })
+    proc.on('close', () => {
+      clearTimeout(kill)
+      if (stderr && !stdout) console.warn(`[ytdlp playlist] stderr=${stderr.slice(0, 300)}`)
+      const items: PlaylistItem[] = []
+      for (const line of stdout.split(/\r?\n/)) {
+        if (!line.trim()) continue
+        try {
+          const e = JSON.parse(line) as SearchEntry & {
+            url?: string
+            extractor_key?: string
+            ie_key?: string
+          }
+          const source =
+            e.webpage_url ??
+            (e.url && /^https?:\/\//.test(e.url) ? e.url : null)
+          if (!source) continue
+          items.push({
+            service: mapExtractorToService(
+              e.extractor_key ?? e.ie_key ?? '',
+              source
+            ),
+            sourceUrl: source,
+            title: e.title ?? 'Unknown',
+            uploader: e.uploader ?? null,
+            durationSec: typeof e.duration === 'number' ? e.duration : null,
+            thumbnail: pickThumb(e.thumbnails)
+          })
+        } catch {
+          /* skip malformed line */
+        }
+      }
+      resolveP(items)
+    })
+  })
+}
+
+function mapExtractorToService(ie: string, url: string): string {
+  const s = (ie || '').toLowerCase()
+  if (s.includes('youtube')) return 'youtube'
+  if (s.includes('soundcloud')) return 'soundcloud'
+  if (s.includes('bandcamp')) return 'bandcamp'
+  // Fallback from the URL host.
+  try {
+    const h = new URL(url).hostname
+    if (h.includes('youtube') || h.includes('youtu.be')) return 'youtube'
+    if (h.includes('soundcloud')) return 'soundcloud'
+    if (h.includes('bandcamp')) return 'bandcamp'
+  } catch {
+    /* ignore */
+  }
+  return 'youtube'
+}
+
+// ---------------------------------------------------------------------------
 // Artist discography (via YouTube "<Artist> - Topic" channel)
 // ---------------------------------------------------------------------------
 

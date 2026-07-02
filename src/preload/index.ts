@@ -47,6 +47,14 @@ const api = {
   ): Promise<{ ok: true } | { ok: false; error: string }> =>
     ipcRenderer.invoke('library:addExistingTrackToPlaylist', playlistId, trackId),
 
+  importPlaylistFromUrl: (
+    url: string,
+    playlistId: number
+  ): Promise<
+    | { ok: true; added: number; skipped: number; total: number }
+    | { ok: false; error: string }
+  > => ipcRenderer.invoke('library:importPlaylistFromUrl', url, playlistId),
+
   deleteTrack: (trackId: number): Promise<void> =>
     ipcRenderer.invoke('library:deleteTrack', trackId),
 

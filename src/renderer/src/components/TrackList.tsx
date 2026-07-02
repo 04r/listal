@@ -27,6 +27,7 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
   const currentTrack = usePlayer((s) => (s.index >= 0 ? s.queue[s.index] : null))
   const playing = usePlayer((s) => s.playing)
   const setView = useLibrary((s) => s.setView)
+  const bump = useLibrary((s) => s.bump)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; tracks: Track[] } | null>(null)
   const [share, setShare] = useState<Attachment | null>(null)
@@ -96,6 +97,9 @@ export function TrackList({ tracks, onPlay, onRemove }: Props): React.JSX.Elemen
     }
     if (anyOk) {
       setAddedTo(playlistId)
+      // Bump the library so every open view (sidebar counts, playlist view)
+      // refetches with the new tracks visible.
+      bump()
       const name = playlists.find((p) => p.id === playlistId)?.name ?? 'playlist'
       window.dispatchEvent(
         new CustomEvent('listal:toast', {

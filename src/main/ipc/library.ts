@@ -6,6 +6,7 @@ import {
   getArtistDiscography,
   getUploaderUploads,
   songRadio,
+  resolvePlaylistUrl,
   type SearchResult,
   type ArtistDiscography,
   type ArtistTrack,
@@ -198,6 +199,81 @@ export function registerLibraryIpc(): void {
   ipcMain.handle('library:deleteTrack', (_e, trackId: number): void => {
     getDb().prepare('DELETE FROM tracks WHERE id = ?').run(trackId)
   })
+
+  // Import every track on a playlist / album URL into the given playlist.
+  // Uses yt-dlp's --flat-playlist so we only pay for metadata up front; the
+  // per-track stream resolves later on play. Works for YouTube playlists,
+  // SoundCloud sets and Bandcamp albums.
+  ipcMain.handle(
+    'library:importPlaylistFromUrl',
+    async (
+      _e,
+      url: string,
+      playlistId: number
+    ): Promise<
+      | { ok: true; added: number; skipped: number; total: number }
+      | { ok: false; error: string }
+    > => {
+      try {
+        const items = await resolvePlaylistUrl(url)
+        if (items.length === 0) {
+          return { ok: false, error: 'No tracks found at that URL.' }
+        }
+        const db = getDb()
+        const insertTrack = db.prepare(
+          `INSERT INTO tracks (service, service_id, source_url, title, artist, duration_ms, thumbnail_url, added_at)
+           VALUES (@service, @service_id, @source_url, @title, @artist, @duration_ms, @thumbnail_url, @added_at)
+           ON CONFLICT(service, service_id) DO UPDATE SET
+             title = excluded.title,
+             artist = excluded.artist,
+             duration_ms = excluded.duration_ms,
+             thumbnail_url = excluded.thumbnail_url
+           RETURNING *`
+        )
+        const insertLink = db.prepare(
+          'INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)'
+        )
+        const maxPos = (
+          db
+            .prepare(
+              'SELECT COALESCE(MAX(position), -1) AS m FROM playlist_tracks WHERE playlist_id = ?'
+            )
+            .get(playlistId) as { m: number }
+        ).m
+        let pos = maxPos + 1
+        let added = 0
+        let skipped = 0
+        const now = Date.now()
+        for (const item of items) {
+          try {
+            const classified = classify(item.sourceUrl)
+            const row = insertTrack.get({
+              service: classified.service ?? item.service,
+              service_id: classified.serviceId ?? item.sourceUrl,
+              source_url: item.sourceUrl,
+              title: item.title,
+              artist: item.uploader,
+              duration_ms: item.durationSec ? Math.round(item.durationSec * 1000) : null,
+              thumbnail_url: item.thumbnail,
+              added_at: now
+            }) as TrackRow
+            const linked = insertLink.run(playlistId, row.id, pos)
+            if (linked.changes > 0) {
+              added += 1
+              pos += 1
+            } else {
+              skipped += 1
+            }
+          } catch {
+            skipped += 1
+          }
+        }
+        return { ok: true, added, skipped, total: items.length }
+      } catch (e) {
+        return { ok: false, error: (e as Error).message }
+      }
+    }
+  )
 
   // ---- search ----
   ipcMain.handle('library:search', async (_e, query: string): Promise<SearchResult[]> => {
